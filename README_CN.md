@@ -89,8 +89,37 @@ make run
 | `--ca-cert` | `ssl/ca.crt` | 本地 CA 证书路径（PEM 格式） |
 | `--ca-key` | `ssl/ca.key` | 本地 CA 私钥路径（PEM 格式） |
 | `--cache-dir` | `var/cache/` | 静态资源缓存落盘目录 |
+| `--cache-max-age` | `720h` (30天) | 默认静态缓存有效期（如 `720h`, `24h`, `30m`） |
+| `--max-cache-size` | `10G` | 最大缓存占用上限（如 `10G`, `500M`） |
+| `--no-api` | `false` | 关闭内嵌管理 API/控制台 |
 | `--log-level` | `INFO` | 日志级别（`DEBUG`, `INFO`, `WARN`, `ERROR`） |
 | `--log-to-stdout` | `true` | 是否输出日志到控制台标准输出 |
+
+---
+
+## 🧹 缓存主动清理与管理 (Purge)
+
+当源站更新静态资源时，你可以通过以下多种方式随时主动清理缓存：
+
+### 1. 浏览器控制台界面
+直接在浏览器访问 `http://<代理IP>:9999/__purge`，即可打开轻量 Web 管理面板：
+- **按 URL 清理**：输入目标资源的完整 URL（如 `https://121.29.88.190:39092/static/js/chunk.js`），实时清除对应缓存。
+- **一键清空全部**：点击危险操作按钮一键清除所有落盘缓存并重置占用统计。
+
+### 2. HTTP GET 快捷地址清理 (支持浏览器与脚本)
+```bash
+# 清空全部缓存
+curl http://127.0.0.1:9999/__purge?all=1
+
+# 清理指定 URL 的缓存
+curl "http://127.0.0.1:9999/__purge?url=https://121.29.88.190:39092/static/js/app.js"
+```
+
+### 3. 标准 HTTP PURGE 请求方法 (走代理)
+客户端若已配置代理，可直接发送 `PURGE` 请求：
+```bash
+curl -X PURGE -x http://127.0.0.1:9999 https://121.29.88.190:39092/static/js/app.js
+```
 
 ---
 

@@ -6,6 +6,8 @@ import (
 	"reservoir/config/flags"
 	"reservoir/utils"
 	"reservoir/utils/assertedpath"
+	"reservoir/utils/duration"
+	"time"
 )
 
 var (
@@ -39,6 +41,16 @@ func OverrideGlobalConfigFromFlags() {
 
 	fl.AddString("cache-dir", "var/cache/", "Path to cache directory").OnSet(func(val flags.FlagValue) {
 		Global.CacheDir.Overwrite(val.AsString())
+	})
+	fl.AddString("cache-max-age", "", "Default cache max age (e.g. 720h, 24h, 30m)").OnSet(func(val flags.FlagValue) {
+		if d, err := time.ParseDuration(val.AsString()); err == nil {
+			Global.DefaultCacheMaxAge.Overwrite(duration.Duration(d))
+		} else {
+			slog.Error("Failed to parse cache-max-age duration", "value", val.AsString(), "error", err)
+		}
+	})
+	fl.AddString("max-cache-size", "", "Maximum cache size (e.g. 10G, 500M)").OnSet(func(val flags.FlagValue) {
+		Global.MaxCacheSize.Overwrite(val.AsBytesize())
 	})
 
 	fl.AddString("webserver-listen", "localhost:8080", "The address and port that the webserver (dashboard and API) will listen on").OnSet(func(val flags.FlagValue) {

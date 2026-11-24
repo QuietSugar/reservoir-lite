@@ -339,12 +339,57 @@ func (c *FileCache[ObjectData]) Cache(key CacheKey, data io.Reader, expires time
 	}, nil
 }
 
-func (c *FileCache[ObjectData]) Delete(key CacheKey) error {
+func (c *FileCache[ObjectData]) Delete(key CacheKey) (bool, error) {
 	lock := c.getLock(key)
 	lock.Lock()
 	defer lock.Unlock()
 
-	return c.ensureRemove(key)
+	_, exists := c.entries[key]
+	filePath := filepath.Join(c.rootDir.Path, key.Hex)
+	if !exists {
+		if _, err := os.Stat(filePath); err == nil {
+			exists = true
+		}
+	}
+
+	if !exists {
+		return false, nil
+	}
+
+	err := c.ensureRemove(key)
+	return err == nil, err
+}
+
+func (c *FileCache[ObjectData]) PurgeAll() (int, error) {
+	keys := make([]CacheKey, 0, len(c.entries))
+	for k := range c.entries {
+		keys = append(keys, k)
+	}
+
+	count := 0
+	for _, key := range keys {
+		lock := c.getLock(key)
+		lock.Lock()
+		if err := c.ensureRemove(key); err == nil {
+			count++
+		}
+		lock.Unlock()
+	}
+
+	// Also remove any remaining physical files in cache directory
+	if dirEntries, err := os.ReadDir(c.rootDir.Path); err == nil {
+		for _, entry := range dirEntries {
+			if !entry.IsDir() {
+				_ = os.Remove(filepath.Join(c.rootDir.Path, entry.Name()))
+			}
+		}
+	}
+
+	c.byteSize = 0
+	metrics.Global.Cache.BytesCached.Set(0)
+	metrics.Global.Cache.CacheEntries.Set(0)
+	slog.Info("Successfully purged all cache entries", "purged_count", count)
+	return count, nil
 }
 
 func (c *FileCache[ObjectData]) UpdateMetadata(key CacheKey, modifier func(*EntryMetadata[ObjectData])) error {

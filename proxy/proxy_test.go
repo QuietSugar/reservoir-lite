@@ -1,16 +1,22 @@
 package proxy
 
 import (
+	"bytes"
+	"context"
 	"crypto/ecdsa"
 	"crypto/elliptic"
 	"crypto/rand"
 	"crypto/x509"
 	"crypto/x509/pkix"
+	"encoding/json"
 	"encoding/pem"
 	"math/big"
 	"net"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"reservoir/cache"
 	"reservoir/proxy/certs"
 	"testing"
 	"time"
@@ -177,5 +183,105 @@ func TestAddrToUrl(t *testing.T) {
 	}
 	if uHttps.Scheme != "https" {
 		t.Errorf("expected https scheme, got %s", uHttps.Scheme)
+	}
+}
+
+func TestProxy_PurgeEndpoint_And_TargetURL(t *testing.T) {
+	tmpDir := t.TempDir()
+	caCertPath := filepath.Join(tmpDir, "ca.crt")
+	caKeyPath := filepath.Join(tmpDir, "ca.key")
+	generateTestCA(t, caCertPath, caKeyPath)
+
+	ca, err := certs.NewPrivateCA(caCertPath, caKeyPath)
+	if err != nil {
+		t.Fatalf("failed to create CA: %v", err)
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	p, err := NewProxy(tmpDir, ca, ctx)
+	if err != nil {
+		t.Fatalf("failed to create proxy: %v", err)
+	}
+	defer p.cache.Destroy()
+
+	// Seed cache with a resource: https://121.29.88.190:39092/static/js/chunk.js
+	keyStr := "https|GET|121.29.88.190:39092|/static/js/chunk.js|"
+	key := cache.FromString(keyStr)
+	entry, err := p.cache.Cache(key, bytes.NewReader([]byte("js payload")), time.Now().Add(1*time.Hour), cachedRequestInfo{})
+	if err != nil {
+		t.Fatalf("failed to cache test entry: %v", err)
+	}
+	entry.Data.Close()
+
+	// 1. Purge by specific URL via GET /__purge?url=...
+	req := httptest.NewRequest(http.MethodGet, "/__purge?url=https://121.29.88.190:39092/static/js/chunk.js", nil)
+	rec := httptest.NewRecorder()
+	p.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200 OK, got %d. Body: %s", rec.Code, rec.Body.String())
+	}
+
+	var purgeResp map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &purgeResp); err != nil {
+		t.Fatalf("failed to parse JSON response: %v", err)
+	}
+	if purgeResp["status"] != "ok" || purgeResp["purged"] != true {
+		t.Fatalf("unexpected purge response: %v", purgeResp)
+	}
+
+	// Verify it's no longer in cache
+	_, err = p.cache.Get(key)
+	if err != cache.ErrCacheMiss {
+		t.Fatalf("expected ErrCacheMiss, got %v", err)
+	}
+
+	// 2. Querying purge again should yield 404 not_found
+	rec2 := httptest.NewRecorder()
+	p.ServeHTTP(rec2, req)
+	if rec2.Code != http.StatusNotFound {
+		t.Fatalf("expected 404 Not Found on already purged URL, got %d", rec2.Code)
+	}
+
+	// 3. Seed another entry and test PurgeAll via /__purge?all=1
+	key2Str := "https|GET|121.29.88.190:39092|/static/css/style.css|"
+	key2 := cache.FromString(key2Str)
+	entry2, err := p.cache.Cache(key2, bytes.NewReader([]byte("css payload")), time.Now().Add(1*time.Hour), cachedRequestInfo{})
+	if err != nil {
+		t.Fatalf("failed to cache test entry: %v", err)
+	}
+	entry2.Data.Close()
+
+	reqAll := httptest.NewRequest(http.MethodGet, "/__purge?all=1", nil)
+	recAll := httptest.NewRecorder()
+	p.ServeHTTP(recAll, reqAll)
+
+	if recAll.Code != http.StatusOK {
+		t.Fatalf("expected 200 OK for purge all, got %d", recAll.Code)
+	}
+
+	var allResp map[string]any
+	if err := json.Unmarshal(recAll.Body.Bytes(), &allResp); err != nil {
+		t.Fatalf("failed to parse JSON response: %v", err)
+	}
+	if allResp["status"] != "ok" || allResp["action"] != "purge_all" {
+		t.Fatalf("unexpected purge all response: %v", allResp)
+	}
+
+	// 4. Test PURGE HTTP method
+	entry3, err := p.cache.Cache(key, bytes.NewReader([]byte("js payload 2")), time.Now().Add(1*time.Hour), cachedRequestInfo{})
+	if err != nil {
+		t.Fatalf("failed to cache test entry: %v", err)
+	}
+	entry3.Data.Close()
+
+	reqPurgeMethod := httptest.NewRequest("PURGE", "http://121.29.88.190:39092/static/js/chunk.js", nil)
+	recPurgeMethod := httptest.NewRecorder()
+	p.ServeHTTP(recPurgeMethod, reqPurgeMethod)
+
+	if recPurgeMethod.Code != http.StatusOK {
+		t.Fatalf("expected 200 OK for HTTP PURGE method, got %d", recPurgeMethod.Code)
 	}
 }

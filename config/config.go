@@ -75,7 +75,7 @@ func newDefault() *Config {
 		CacheDir:                NewConfigProp("var/cache/"),
 		IgnoreCacheControl:      NewConfigProp(true), // This this is primarily targeted at caching package managers, we want to cache aggressively by default.
 		MaxCacheSize:            NewConfigProp(bytesize.ParseUnchecked("10G")),
-		DefaultCacheMaxAge:      NewConfigProp(duration.Duration(1 * time.Hour)),
+		DefaultCacheMaxAge:      NewConfigProp(duration.Duration(30 * 24 * time.Hour)), // Defaults to 30 days long-term static cache
 		ForceDefaultCacheMaxAge: NewConfigProp(true), // Since this is again primarily targeted at caching apt repositories, we want to cache aggressively by default.
 		CacheCleanupInterval:    NewConfigProp(duration.Duration(90 * time.Minute)),
 		LogLevel:                NewConfigProp(slog.LevelInfo),

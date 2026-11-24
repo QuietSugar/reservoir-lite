@@ -18,14 +18,17 @@ type Cache[ObjectData any] interface {
 	// Stores an entry in the cache with the specified input key, and returns the cached entry.
 	Cache(key CacheKey, data io.Reader, expires time.Time, objectData ObjectData) (*Entry[ObjectData], error)
 
-	// Removes an entry from the cache by its input key.
-	Delete(key CacheKey) error
+	// Removes an entry from the cache by its input key. Returns true if the entry existed and was removed.
+	Delete(key CacheKey) (bool, error)
 
 	// Retrieves the metadata of an entry in the cache.
 	GetMetadata(key CacheKey) (meta *EntryMetadata[ObjectData], stale bool, err error)
 
 	// Modifies the metadata of an entry in the cache.
 	UpdateMetadata(key CacheKey, modifier func(*EntryMetadata[ObjectData])) error
+
+	// Removes all entries from the cache. Returns the number of removed entries.
+	PurgeAll() (int, error)
 
 	// Calls any cleanup operations that might be necessary. The cache must not be used after this method is called.
 	Destroy()

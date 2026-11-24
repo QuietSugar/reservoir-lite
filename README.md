@@ -78,8 +78,37 @@ Settings can be specified via command-line flags or in `var/config.json`:
 | `--listen` | `0.0.0.0:9999` | Proxy listen address and port |
 | `--ca-cert` | `ssl/ca.crt` | Path to CA certificate (PEM) |
 | `--ca-key` | `ssl/ca.key` | Path to CA private key (PEM) |
+| `--cache-dir` | `var/cache/` | Directory where cached assets are stored |
+| `--cache-max-age` | `720h` (30 days) | Default cache expiration max age (e.g. `720h`, `24h`, `30m`) |
+| `--max-cache-size` | `10G` | Maximum cache size on disk (e.g. `10G`, `500M`) |
+| `--no-api` | `false` | Disable embedded API and web dashboard |
 | `--log-level` | `INFO` | Logging level (`DEBUG`, `INFO`, `WARN`, `ERROR`) |
 | `--log-to-stdout` | `true` | Log to standard output |
+
+---
+
+## 🧹 Cache Purge & Invalidation
+
+When upstream website assets are updated, cache can be invalidated using any of the following methods:
+
+### 1. Interactive Web Interface
+Navigate to `http://<proxy-ip>:9999/__purge` in your browser:
+- **Purge by URL**: Input target URL to clear its specific cache.
+- **Purge All**: Click one button to clear all disk cache and reset byte usage.
+
+### 2. HTTP GET Endpoint
+```bash
+# Invalidate all cached assets
+curl http://127.0.0.1:9999/__purge?all=1
+
+# Invalidate specific URL
+curl "http://127.0.0.1:9999/__purge?url=https://121.29.88.190:39092/static/js/app.js"
+```
+
+### 3. HTTP PURGE Method (via Proxy)
+```bash
+curl -X PURGE -x http://127.0.0.1:9999 https://121.29.88.190:39092/static/js/app.js
+```
 
 ---
 

@@ -111,3 +111,61 @@ func TestFileCache_ConcurrentAccess_RaceSafe(t *testing.T) {
 	}
 	wg.Wait()
 }
+
+func TestFileCache_PurgeAll_And_Delete(t *testing.T) {
+	tmpDir := t.TempDir()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	fc := NewFileCache[testData](tmpDir, 10*time.Minute, ctx)
+	defer fc.Destroy()
+
+	key1 := CacheKey{Hex: "purgekey1"}
+	key2 := CacheKey{Hex: "purgekey2"}
+
+	// Cache two entries
+	e1, err := fc.Cache(key1, bytes.NewReader([]byte("data1")), time.Now().Add(1*time.Hour), testData{})
+	if err != nil {
+		t.Fatalf("failed to cache key1: %v", err)
+	}
+	e1.Data.Close()
+
+	e2, err := fc.Cache(key2, bytes.NewReader([]byte("data2")), time.Now().Add(1*time.Hour), testData{})
+	if err != nil {
+		t.Fatalf("failed to cache key2: %v", err)
+	}
+	e2.Data.Close()
+
+	// 1. Delete single key
+	deleted, err := fc.Delete(key1)
+	if err != nil || !deleted {
+		t.Fatalf("expected key1 to be deleted, got deleted=%v, err=%v", deleted, err)
+	}
+
+	// Verify key1 is gone
+	_, err = fc.Get(key1)
+	if err != ErrCacheMiss {
+		t.Fatalf("expected ErrCacheMiss for key1, got %v", err)
+	}
+
+	// Deleting again should return false (not found)
+	deletedAgain, err := fc.Delete(key1)
+	if err != nil || deletedAgain {
+		t.Fatalf("expected deletedAgain=false, got %v, err=%v", deletedAgain, err)
+	}
+
+	// 2. PurgeAll should remove key2 and any remaining disk files
+	count, err := fc.PurgeAll()
+	if err != nil {
+		t.Fatalf("PurgeAll failed: %v", err)
+	}
+	if count != 1 {
+		t.Fatalf("expected 1 entry purged, got %d", count)
+	}
+
+	// Verify key2 is also gone
+	_, err = fc.Get(key2)
+	if err != ErrCacheMiss {
+		t.Fatalf("expected ErrCacheMiss for key2, got %v", err)
+	}
+}
