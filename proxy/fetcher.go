@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"path/filepath"
 	"reservoir/cache"
 	"reservoir/config"
 	"reservoir/metrics"
@@ -267,6 +268,18 @@ func (f *fetcher) getFromCacheOrFetch(req *http.Request, key cache.CacheKey, cli
 func (f *fetcher) dedupFetch(req *http.Request, key cache.CacheKey, clientHd *headers.HeaderDirectives) (fetched fetchResult, err error) {
 	slog.Debug("Attempting to dedup fetch...")
 
+	// Check if URL targets a static asset by extension
+	isStaticAsset := func() bool {
+		if req.URL == nil {
+			return false
+		}
+		ext := filepath.Ext(req.URL.Path)
+		return staticAssetExtensions[ext]
+	}()
+	if !isStaticAsset {
+		slog.Debug("Bypassing cache for non-static asset", "url", req.URL.String())
+		return f.fetchDirectlyFromUpstream(req)
+	}
 	shouldCoalesce := !clientHd.Range.IsPresent() && req.Method == http.MethodGet
 	if !shouldCoalesce {
 		// These requests also aren't cacheable, so they just go straight to upstream..

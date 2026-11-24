@@ -1,12 +1,14 @@
 package proxy
 
 import (
+	"crypto/tls"
 	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
 	"net/url"
 	"strings"
+	"time"
 )
 
 var (
@@ -14,6 +16,24 @@ var (
 	ErrURLParseFailed    = errors.New("URL parse failed")
 	ErrSendRequestFailed = errors.New("error sending request to target")
 )
+
+// staticAssetExtensions defines the file extensions allowed for caching.
+var staticAssetExtensions = map[string]bool{
+	".js":    true,
+	".css":   true,
+	".png":   true,
+	".jpg":   true,
+	".jpeg":  true,
+	".gif":   true,
+	".svg":   true,
+	".ico":   true,
+	".webp":  true,
+	".woff":  true,
+	".woff2": true,
+	".ttf":   true,
+	".eot":   true,
+	".json":  true,
+}
 
 func removeHopByHopHeaders(header http.Header) {
 	for _, v := range header.Values("Connection") {
@@ -54,6 +74,9 @@ func addrToUrl(addr string, httpsDefault bool) (*url.URL, error) {
 }
 
 func changeRequestToTarget(req *http.Request, httpsDefault bool) error {
+	// Infer scheme from request URI if present
+	isHttp := strings.HasPrefix(req.RequestURI, "http://")
+	httpsDefault = !isHttp
 	targetHost := req.Host
 	targetUrl, err := addrToUrl(targetHost, httpsDefault)
 	if err != nil {
@@ -78,7 +101,32 @@ func sendRequestToTarget(req *http.Request, httpsDefault bool) (*http.Response, 
 	removeHopByHopHeaders(req.Header)
 
 	slog.Debug("Sending request", "url", req.URL, "method", req.Method)
-	resp, err := http.DefaultClient.Do(req)
+	var client *http.Client
+	var err error
+	if httpsDefault {
+		// Custom TLS config: skip upstream cert verification
+		tr := &http.Transport{
+			TLSClientConfig: &tls.Config{
+				InsecureSkipVerify: true,
+			},
+			ResponseHeaderTimeout: 10 * time.Second,
+			DisableCompression:    true,
+		}
+
+		client = &http.Client{
+			Transport: tr,
+			Timeout:   15 * time.Second,
+		}
+	} else {
+		tr := &http.Transport{
+			DisableCompression: true,
+		}
+		client = &http.Client{
+			Transport: tr,
+			Timeout:   15 * time.Second,
+		}
+	}
+	resp, err := client.Do(req)
 	if err != nil {
 		slog.Error("Error sending request to target", "url", req.URL, "error", err)
 		return nil, fmt.Errorf("%w: %v", ErrSendRequestFailed, err)

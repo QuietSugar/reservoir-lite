@@ -52,6 +52,8 @@ func (c *RawHTTPResponder) AddHeader(name string, value string) {
 }
 
 func (c *RawHTTPResponder) SetHeaders(headers http.Header) {
+	c.GetHeaders().Del("Content-Encoding")
+	c.GetHeaders().Del("Content-Length")
 	for key, values := range headers {
 		for _, value := range values {
 			c.SetHeader(key, value)

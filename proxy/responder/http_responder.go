@@ -31,6 +31,9 @@ func (c *HTTPResponder) AddHeader(name string, value string) {
 }
 
 func (c *HTTPResponder) SetHeaders(headers http.Header) {
+	// 删除 head content-encoding
+	c.GetHeaders().Del("Content-Encoding")
+	c.GetHeaders().Del("Content-Length")
 	for key, values := range headers {
 		for _, value := range values {
 			c.SetHeader(key, value)

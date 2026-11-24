@@ -63,7 +63,7 @@ func NewPrivateCA(certFile, keyFile string) (*PrivateCA, error) {
 // signed by the parent/parentKey certificate. hoursValid is the duration of
 // the new certificate's validity.
 // https://github.com/eliben/code-for-blog/blob/main/2022/go-and-proxies/connect-mitm-proxy.go
-func (ca *PrivateCA) createCert(dnsNames []string, hoursValid int) (cert []byte, priv []byte, err error) {
+func (ca *PrivateCA) createCert(host string, hoursValid int) (cert []byte, priv []byte, err error) {
 	privateKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	if err != nil {
 		slog.Error("Failed to generate private key", "error", err)
@@ -76,12 +76,19 @@ func (ca *PrivateCA) createCert(dnsNames []string, hoursValid int) (cert []byte,
 		slog.Error("Failed to generate serial number", "error", err)
 		return nil, nil, fmt.Errorf("%w: %v", ErrFailedToGenerateSerial, err)
 	}
-
+	var ipList []net.IP
+	thisIp := net.ParseIP(host)
+	if thisIp != nil {
+		ipList = append(ipList, thisIp)
+	}
+	dnsNames := []string{"reservoir", host}
 	template := x509.Certificate{
 		SerialNumber: serialNumber,
 		Subject: pkix.Name{
-			Organization: []string{"reservoir"},
+			Organization: dnsNames,
+			CommonName:   host,
 		},
+		IPAddresses:           ipList,
 		DNSNames:              dnsNames,
 		NotBefore:             time.Now(),
 		NotAfter:              time.Now().Add(time.Duration(hoursValid) * time.Hour),
@@ -136,7 +143,7 @@ func (ca *PrivateCA) GetCertForHost(host string) (*tls.Certificate, error) {
 	slog.Debug("Creating new TLS certificate", "host", host)
 
 	// Create a fake TLS certificate for the target host, signed by our CA.
-	pemCert, pemKey, err := ca.createCert([]string{host}, 240)
+	pemCert, pemKey, err := ca.createCert(host, 2400)
 	if err != nil {
 		slog.Error("Failed to create TLS certificate for host", "host", host, "error", err)
 		return nil, fmt.Errorf("%w: %v", ErrFailedToCreateTLSCert, err)

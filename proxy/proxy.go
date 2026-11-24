@@ -205,7 +205,6 @@ func (p *Proxy) processRequest(r responder.Responder, req *http.Request, key cac
 			r.SetHeader("Accept-Ranges", "bytes")
 			addCacheHeaders(r, req, typeutils.None[*cache.Entry[cachedRequestInfo]](), fetchResultToCacheStatus(fetched))
 		}
-
 		return finalizeAndRespond(r, fetched.Direct.Response.Body, fetched.Direct.UpstreamStatus, req)
 
 	case fetchTypeCached:
