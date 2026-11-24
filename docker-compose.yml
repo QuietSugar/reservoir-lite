@@ -1,0 +1,24 @@
+version: "3.8"
+
+services:
+  reservoir-lite:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: reservoir-lite:latest
+    container_name: reservoir-lite
+    restart: unless-stopped
+    ports:
+      - "9999:9999"
+    environment:
+      - MAX_MEM_CACHE_SIZE=100M    # L1 内存缓存上限 (0 表示禁用, 100M/500M)
+      - MAX_CACHE_SIZE=10G         # L2 磁盘缓存上限
+      - CACHE_MAX_AGE=720h         # 静态资源默认缓存时长 (720h = 30天)
+      - LOG_LEVEL=INFO
+    volumes:
+      # 挂载磁盘缓存目录，容器重启后持久化
+      - ./var/cache:/app/var/cache
+      # 挂载根证书目录:
+      # 方式 A (默认): 容器首次启动自动在 ./ssl 生成私有 CA (ca.crt / ca.key)
+      # 方式 B (推荐使用 mkcert): 将 mkcert 的 rootCA.pem 映射为 /app/ssl/ca.crt, rootCA-key.pem 映射为 /app/ssl/ca.key
+      - ./ssl:/app/ssl

@@ -63,6 +63,7 @@ openssl req -x509 -new -nodes -key ssl/ca.key -sha256 -days 3650 -out ssl/ca.crt
 
 ### 3. 编译与运行
 
+#### 本地二进制直接运行
 ```bash
 # 编译二进制
 make build
@@ -75,6 +76,101 @@ make build
 也可以直接通过 make 快速运行：
 ```bash
 make run
+```
+
+---
+
+## 🐳 Docker 容器化部署
+
+本项目提供了极其轻量的多阶段 Alpine Docker 镜像（构建后镜像体积仅约 **22 MB**），并且支持容器内自动生成自签名 CA 根证书，或直接挂载宿主机已有根证书体系（如 `mkcert`）。
+
+### 方式一：使用 Docker Compose（推荐）
+
+项目根目录已内置 `docker-compose.yml`：
+
+```bash
+# 启动容器服务
+docker compose up -d
+
+# 查看实时运行日志
+docker compose logs -f
+```
+
+`docker-compose.yml` 示例配置：
+```yaml
+version: "3.8"
+
+services:
+  reservoir-lite:
+    build: .
+    image: reservoir-lite:latest
+    container_name: reservoir-lite
+    restart: unless-stopped
+    ports:
+      - "9999:9999"
+    environment:
+      - MAX_MEM_CACHE_SIZE=100M    # L1 内存缓存容量 (0 表示禁用, 100M/500M)
+      - MAX_CACHE_SIZE=10G         # L2 磁盘缓存容量
+      - CACHE_MAX_AGE=720h         # 静态资源默认缓存时长 (720h = 30天)
+      - LOG_LEVEL=INFO
+    volumes:
+      # 持久化磁盘缓存数据
+      - ./var/cache:/app/var/cache
+      # 挂载 SSL 目录: 首次启动会自动在 ./ssl 中生成私有根证书 (ca.crt / ca.key)
+      - ./ssl:/app/ssl
+```
+
+### 方式二：使用 `docker run` 命令行启动
+
+```bash
+# 构建镜像
+docker build -t reservoir-lite:latest .
+
+# 启动容器并挂载缓存与证书
+docker run -d \
+  --name reservoir-lite \
+  --restart unless-stopped \
+  -p 9999:9999 \
+  -v $(pwd)/var/cache:/app/var/cache \
+  -v $(pwd)/ssl:/app/ssl \
+  -e MAX_MEM_CACHE_SIZE=100M \
+  -e MAX_CACHE_SIZE=10G \
+  -e CACHE_MAX_AGE=720h \
+  reservoir-lite:latest
+```
+
+---
+
+## 🔐 配合 mkcert 根证书体系（极简免配置客户端信任）
+
+如果你已经在客户端/内网通过 [mkcert](https://github.com/FiloSottile/mkcert) 安装了受信任的本地根证书，**强烈建议直接让 reservoir-lite 使用你的 mkcert 根证书**。
+
+### 核心优势与工作机制
+1. **客户端 0 告警，无需重复安装证书**：所有已经运行过 `mkcert -install` 的客户端（电脑、浏览器、手机、Java 等）均已信任 mkcert 根 CA，走代理访问任何 HTTPS 站点直接显示安全绿锁。
+2. **无需提前手动签发 IP 证书**：
+   - **mkcert 本身支持 IP 证书吗？** 原生支持（如 `mkcert 121.29.88.190`）。
+   - **但在本项目中需要你手动跑 mkcert 签发 IP 吗？** **完全不需要！**
+   - 因为 `reservoir-lite` 内置动态中间人（MITM）证书签发引擎。当你把 mkcert 的 Root CA 私钥交给代理后，只要客户端发起访问（无论是域名如 `github.com` 还是 IP 直连如 `https://121.29.88.190:39092/`），代理都会**自动在内存中实时签发带有合法 IP SAN 扩展的 TLS 证书**，并由 mkcert 签名。
+
+### 挂载 mkcert 步骤
+
+```bash
+# 1. 查找你的 mkcert 根证书存放路径（通常为 ~/.local/share/mkcert）
+mkcert -CAROOT
+
+# 2. 方案 A：直接运行二进制
+./reservoir \
+  --ca-cert "$(mkcert -CAROOT)/rootCA.pem" \
+  --ca-key "$(mkcert -CAROOT)/rootCA-key.pem"
+
+# 2. 方案 B：在 Docker 中挂载 mkcert
+docker run -d \
+  --name reservoir-lite \
+  -p 9999:9999 \
+  -v $(pwd)/var/cache:/app/var/cache \
+  -v $(mkcert -CAROOT)/rootCA.pem:/app/ssl/ca.crt:ro \
+  -v $(mkcert -CAROOT)/rootCA-key.pem:/app/ssl/ca.key:ro \
+  reservoir-lite:latest
 ```
 
 ---

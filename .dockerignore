@@ -1,0 +1,12 @@
+.git
+.gitignore
+.zed/
+var/
+ssl/*.crt
+ssl/*.key
+ssl/*.pem
+reservoir
+reservoir.exe
+*.coverprofile
+__debug*
+Dockerfile.local

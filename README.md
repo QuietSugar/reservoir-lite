@@ -54,6 +54,7 @@ openssl req -x509 -new -nodes -key ssl/ca.key -sha256 -days 3650 -out ssl/ca.crt
 
 ### 3. Build & Run
 
+#### Running Native Binary
 ```bash
 # Build binary
 go build -o reservoir main.go
@@ -65,6 +66,79 @@ go build -o reservoir main.go
 Or run directly via Makefile:
 ```bash
 make run
+```
+
+---
+
+## 🐳 Docker Deployment
+
+`reservoir-lite` provides an ultra-lightweight multi-stage Alpine container image (~**22 MB**), supporting automatic root CA generation on first boot or mounting existing CA certificates (such as `mkcert`).
+
+### Using Docker Compose (Recommended)
+
+```bash
+# Start container
+docker compose up -d
+
+# View live logs
+docker compose logs -f
+```
+
+Sample `docker-compose.yml`:
+```yaml
+version: "3.8"
+
+services:
+  reservoir-lite:
+    build: .
+    image: reservoir-lite:latest
+    container_name: reservoir-lite
+    restart: unless-stopped
+    ports:
+      - "9999:9999"
+    environment:
+      - MAX_MEM_CACHE_SIZE=100M    # L1 RAM cache capacity (0 disables RAM cache)
+      - MAX_CACHE_SIZE=10G         # L2 Disk cache capacity
+      - CACHE_MAX_AGE=720h         # Default cache duration (720h = 30 days)
+      - LOG_LEVEL=INFO
+    volumes:
+      - ./var/cache:/app/var/cache
+      - ./ssl:/app/ssl             # Auto-generates ca.crt/ca.key if empty
+```
+
+### Using `docker run`
+
+```bash
+docker run -d \
+  --name reservoir-lite \
+  --restart unless-stopped \
+  -p 9999:9999 \
+  -v $(pwd)/var/cache:/app/var/cache \
+  -v $(pwd)/ssl:/app/ssl \
+  -e MAX_MEM_CACHE_SIZE=100M \
+  -e MAX_CACHE_SIZE=10G \
+  -e CACHE_MAX_AGE=720h \
+  reservoir-lite:latest
+```
+
+---
+
+## 🔐 Integration with mkcert
+
+If you already use [mkcert](https://github.com/FiloSottile/mkcert) on your workstation or internal network, you can directly mount your mkcert root CA:
+
+1. **Zero Client Trust Friction**: Devices that executed `mkcert -install` will automatically trust all HTTPS traffic intercepted by the proxy without security warnings.
+2. **Dynamic On-the-Fly IP Certificates**: You do **not** need to manually generate certificates for each IP or domain. `reservoir-lite` will dynamically generate and sign valid TLS certificates (including Subject Alternative Names for IP addresses) on the fly using your mkcert CA.
+
+```bash
+# Run with mkcert CA
+docker run -d \
+  --name reservoir-lite \
+  -p 9999:9999 \
+  -v $(pwd)/var/cache:/app/var/cache \
+  -v $(mkcert -CAROOT)/rootCA.pem:/app/ssl/ca.crt:ro \
+  -v $(mkcert -CAROOT)/rootCA-key.pem:/app/ssl/ca.key:ro \
+  reservoir-lite:latest
 ```
 
 ---
