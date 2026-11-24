@@ -1,108 +1,83 @@
-# reservoir
+# reservoir-lite
 
-[![Build with SLSA](https://github.com/F0903/reservoir/actions/workflows/go-build-slsa3.yml/badge.svg)](https://github.com/F0903/reservoir/actions/workflows/go-build-slsa3.yml)
+A lightweight, zero-dependency caching MITM (Man-in-the-Middle) HTTP(S) forward proxy tailored for static asset acceleration.
 
-A caching MITM (Man-in-the-Middle) HTTP(S) forward proxy with an embedded dashboard.
+> **Attribution**: This project is a specialized lightweight fork of [F0903/reservoir](https://github.com/F0903/reservoir) by Frederik P., licensed under the Apache License 2.0. Repository: [QuietSugar/reservoir-lite](https://github.com/QuietSugar/reservoir-lite). See [UPSTREAM_SYNC.md](UPSTREAM_SYNC.md) for synchronization tracking and divergence details.
 
-Supports caching of both HTTP and HTTPS requests by injecting a certificate to decrypt and cache the data before sending it back to the client.
+---
 
-The original intended usage is as a central cache proxy for apt or other package managers when spread across multiple containers.
+## Key Features
 
-The dashboard is directly embedded into the executable, so the final build artifact is a single self-contained executable.
+- **Pure Go & Zero Runtime Dependencies**: Web dashboard and SQLite user database have been stripped out. No Node.js/pnpm build chain or CGO required.
+- **Static Asset Whitelist Caching**: Automatically filters and caches static assets (`.js`, `.css`, `.png`, `.jpg`, `.svg`, `.woff2`, `.json`, etc.) while directly bypassing and proxying dynamic requests without caching overhead.
+- **HTTPS IP SAN Support**: Generates on-the-fly TLS certificates with IP Subject Alternative Names (SAN), allowing clients to directly trust HTTPS connections to IP addresses.
+- **Transparent Upstream Proxying**: Supports upstream self-signed/internal certificates (`InsecureSkipVerify`), avoids gzip/brotli decompression conflicts, and handles hop-by-hop headers transparently.
+- **Request Coalescing**: Deduplicates concurrent in-flight requests for the same cacheable resource to reduce upstream load.
+
+---
 
 ## Requirements
 
-- Go 1.24 or newer
-- OpenSSL (for generating CA cert/key)
+- **Go 1.24** or newer
+- **OpenSSL** (for generating the local CA certificate and private key)
 
-## Usage Guide
+---
 
-To start with, you need to generate a certificate and key to be used as a certificate authority to generate new certificates for requests to HTTPS domains. This is the mechanism that allows the proxy to decrypt and cache HTTPS responses.
-The caveat being that EVERY client that proxies HTTPS requests through this MUST trust this CA certificate, otherwise you will get errors relating to the untrusted cert.
+## Quick Start
 
-### Generate a CA Certificate and Key (PEM format)
+### 1. Generate Local CA Certificate & Key
 
-```sh
-openssl genrsa -out ca.key 2048
-openssl req -x509 -new -nodes -key ca.key -sha256 -days 3650 -out ca.crt -subj "//CN=reservoir"
+The proxy uses a local Certificate Authority to dynamically sign certificates for intercepted HTTPS requests.
+
+```bash
+mkdir -p ssl
+openssl genrsa -out ssl/ca.key 2048
+openssl req -x509 -new -nodes -key ssl/ca.key -sha256 -days 3650 -out ssl/ca.crt -subj "//CN=reservoir"
 ```
 
-### Trust the CA Certificate
+> ⚠️ **Security Note**: Never commit `ssl/ca.key` to Git. Keep your CA private key secure.
 
-- **Linux:** Add to `/usr/local/share/ca-certificates/` and run `sudo update-ca-certificates`.
-- **Windows:** Double-click `ca-cert.pem` and install it to "Trusted Root Certification Authorities".
+### 2. Trust the CA Certificate on Clients
 
-## Running the Proxy
+- **Linux**:
+  ```bash
+  sudo cp ssl/ca.crt /usr/local/share/ca-certificates/reservoir.crt
+  sudo update-ca-certificates
+  ```
+- **Windows**: Double-click `ssl/ca.crt` and install it into "Trusted Root Certification Authorities".
+- **Docker / Containers**: Mount `ssl/ca.crt` and update CA certificates in container bootstrap scripts.
 
-To run the proxy you have two options; you can either download a prebuilt binary from the releases page (or an unstable build from the actions page), or you can build it yourself by following the instructions below:
+### 3. Build & Run
 
-### Building the Proxy
+```bash
+# Build binary
+go build -o reservoir main.go
 
-Before getting started, you will need to install a few dependencies:
-
-#### Installing dependencies
-
-First off you will need to have [**Node** installed](https://nodejs.org/en/download) and **pnpm** enabled *(run the command `corepack enable pnpm`)*.
-
-Then you need to have **GNU make** installed.
-The way to do this will vary depending on your OS. If you run a Linux distro it will be easy to install via your package manager (it might even be preinstalled).
-
-On Windows the easiest way to do this is with [Chocolatey](https://chocolatey.org/install#individual) by running `choco install make`. Alternatively you can [install it manually here](https://gnuwin32.sourceforge.net/packages/make.htm).
-
-You will of course also need to have [Go installed](https://go.dev/dl/).
-
-Then you just have to build the project with **make** by running `make` in the project directory.
-
-This will automatically build both the frontend and the proxy executable.
-
-Then simply copy the resulting executable to whereever you wish, and run as normal. If you are running it on Linux, you can also setup a systemd service for it, which is recommended.
-
-## Proxy Configuration
-
-Configuration can be done either via the generated configuration file, or the command-line arguments.
-
-If a setting is both specified in the configuration file and as a command-line argument, the command-line argument will take precedence.
-
-### Configuration File
-
-The configuration file is a JSON file that contains all the settings for the proxy.
-You can edit this file manually in ``var/config.json`` to change the configuration. If the ``var/`` folder or config does not exist, run the proxy once, and it will be created automatically.
-Some settings can also be changed in the Dashboard.
-
-### Command-Line Arguments
-
-You can always display info about the command-line arguments by running the proxy with the `--help` flag. Otherwise, you can refer to the following list.
-
-The command-line arguments currently available are the following:
-
-- **listen** (0.0.0.0:9999) - The address and port that the proxy will listen on.
-- **ca-cert** (ssl/ca.crt) - The path to the PEM cert of the CA the proxy will use to sign.
-- **ca-key** (ssl/ca.key) - The path to the PEM key of the CA the proxy will use to sign.
-- **cache-dir** (var/cache) - The path where the cache should be stored.
-- **webserver-listen** (localhost:8080) - The address and port that the webserver (dashboard and API) will listen on.
-- **no-dashboard** (false) - Disable the embedded dashboard.
-- **no-api** (false) - Disable the API.
-- **log-level** (info) - Set the logging level (DEBUG, INFO, WARN, ERROR).
-- **log-file** (var/proxy.log) - The path to the log file. If no path is specified, no file logging will be done. (will also disable dashboard log-viewer)
-- **log-file-max-size** (500M) - The maximum size of the log file before it is rotated.
-- **log-file-max-backups** (3) - The maximum number of old log files to keep.
-- **log-file-compress** (true) - Enable compression for rotated log files.
-- **log-to-stdout** (false) - Enable logging to stdout.
-
-## Example: Using curl with the Proxy
-
-```sh
-curl -x http://127.0.0.1:9999 https://example.com/
+# Run proxy (defaults to 0.0.0.0:9999)
+./reservoir --listen 0.0.0.0:9999 --ca-cert ssl/ca.crt --ca-key ssl/ca.key
 ```
 
-If your CA is not trusted by the system, you can specify it for curl:
-
-```sh
-curl --cacert ca-cert.pem -x http://127.0.0.1:9999 https://example.com/
+Or run directly via Makefile:
+```bash
+make run
 ```
 
-Alternatively if you are too lazy to specify the cert (like me), you can use the `-k` option to skip cert validation:
+---
 
-```sh
-curl -k -x http://127.0.0.1:9999 https://example.com/
-```
+## Configuration
+
+Settings can be specified via command-line flags or in `var/config.json`:
+
+| Flag | Default | Description |
+| :--- | :--- | :--- |
+| `--listen` | `0.0.0.0:9999` | Proxy listen address and port |
+| `--ca-cert` | `ssl/ca.crt` | Path to CA certificate (PEM) |
+| `--ca-key` | `ssl/ca.key` | Path to CA private key (PEM) |
+| `--log-level` | `INFO` | Logging level (`DEBUG`, `INFO`, `WARN`, `ERROR`) |
+| `--log-to-stdout` | `true` | Log to standard output |
+
+---
+
+## License
+
+Licensed under the Apache License, Version 2.0. See [LICENSE](LICENSE) for details.

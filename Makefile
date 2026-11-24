@@ -1,26 +1,16 @@
 .DEFAULT_GOAL := build
 
-# Build the entire project
-build: build-frontend generate-csp build-proxy
+# Build the proxy executable
+build:
+	go build -o reservoir main.go
 
-build-proxy:
-	go build
-
-# Generate Content Security Policy (CSP) header with script hashes
-generate-csp:
-	go generate ./webserver/dashboard/csp
-
-# Build the Svelte frontend
-build-frontend:
-	cd webserver/dashboard/frontend && pnpm install && pnpm run build
-
-# Run the Svelte frontend in development mode
-dev-frontend:
-	cd webserver/dashboard/frontend && pnpm run dev $(ARGS)
+# Run the proxy
+run: build
+	./reservoir
 
 # Remove build artifacts
 clean:
-	rm -f reservoir.exe
-	rm -rf webserver/dashboard/frontend/build
+	rm -f reservoir reservoir.exe
+	rm -rf var/
 
-.PHONY: build build-proxy generate-csp build-frontend dev-frontend clean
+.PHONY: build run clean
