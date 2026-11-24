@@ -30,7 +30,7 @@ This document tracks synchronization baselines, cherry-picked upstream commits, 
 | Date | Upstream Commit | Description | Status | Notes |
 | :--- | :--- | :--- | :--- | :--- |
 | 2025-12-05 | `0aa736c` | Base fork commit | ✅ Merged | Fork origin |
-| Planned | `aa7ccf8` | Fix file handle leak and race conditions | ⏳ Pending | High priority for proxy runtime stability |
+| 2026-11-24 | `aa7ccf8` | Fix file handle leak and race conditions | ✅ Merged | Resolved FD leak in `cache/file_cache.go` and race in singleflight entry handles |
 | Planned | `1f3bd60` | Stream downstream while caching simultaneously | ⏳ Evaluation | Useful for large asset first-load latency |
 | - | SvelteKit 3 / Node 26 | Dashboard frontend modernization | 🚫 Skipped | Frontend stripped in this fork |
 | - | SQLite transactions | Database layer refactor | 🚫 Skipped | Database stripped in this fork |

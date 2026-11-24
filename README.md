@@ -1,5 +1,10 @@
 # reservoir-lite
 
+[English](README.md) | [简体中文](README_CN.md)
+
+[![CI & Build](https://github.com/QuietSugar/reservoir-lite/actions/workflows/ci.yml/badge.svg)](https://github.com/QuietSugar/reservoir-lite/actions/workflows/ci.yml)
+[![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
+
 A lightweight, zero-dependency caching MITM (Man-in-the-Middle) HTTP(S) forward proxy tailored for static asset acceleration.
 
 > **Attribution**: This project is a specialized lightweight fork of [F0903/reservoir](https://github.com/F0903/reservoir) by Frederik P., licensed under the Apache License 2.0. Repository: [QuietSugar/reservoir-lite](https://github.com/QuietSugar/reservoir-lite). See [UPSTREAM_SYNC.md](UPSTREAM_SYNC.md) for synchronization tracking and divergence details.

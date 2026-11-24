@@ -1,0 +1,108 @@
+# reservoir-lite
+
+[English](README.md) | [简体中文](README_CN.md)
+
+[![CI & Build](https://github.com/QuietSugar/reservoir-lite/actions/workflows/ci.yml/badge.svg)](https://github.com/QuietSugar/reservoir-lite/actions/workflows/ci.yml)
+[![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
+
+一个专为**静态资源加速**定制的轻量级、零运行时依赖的 MITM（中间人解密）HTTP(S) 缓存正向代理。
+
+> **开源致谢**：本项目基于 Frederik P. 开源的 [F0903/reservoir](https://github.com/F0903/reservoir) 衍生裁剪，遵循 Apache 2.0 许可证。关于上游版本跟踪、缺陷同步与架构差异，详见 [UPSTREAM_SYNC.md](UPSTREAM_SYNC.md)。
+
+---
+
+## 🌟 核心特性
+
+- **纯 Go 构建，零运行时依赖**：
+  彻底剥离了上游庞大的 SvelteKit Web 控制台与 SQLite 用户认证数据库，无需 Node.js/pnpm 构建链，无需 CGO，开箱即用。
+- **静态资源白名单定向缓存**：
+  仅对静态资源扩展名（如 `.js`、`.css`、`.png`、`.jpg`、`.svg`、`.woff2`、`.json` 等）进行去重与本地缓存；所有非静态接口（如动态 API、未命中白名单的文件）直接穿透代理，零缓存开销。
+- **HTTPS IP 直连证书信任（IP SAN 支持）**：
+  动态签发的 TLS 证书中自动注入了目标 IP 的 Subject Alternative Name (SAN)，使客户端可以通过 `https://192.168.x.x` 直连 IP 且能被操作系统根证书正常信任。
+- **更平滑的上游代理通道**：
+  默认跳过上游证书验证（`InsecureSkipVerify: true`），内网自签名服务无缝代理；关闭自动压缩并剥离冲突的响应头，彻底避免 gzip/brotli 解压冲突。
+- **请求并发合并（Request Coalescing）**：
+  当多个客户端并发请求同一个尚未缓存的静态文件时，代理内部会自动将其合并，仅向上游发送单次真实请求，大幅降低源站负载。
+- **已加固的高并发稳定性**：
+  已合入上游针对文件句柄泄露（FD Leak）以及并发读写 `LastAccess` 数据竞争（Data Race）的修复，满足常驻高并发代理服务的要求。
+
+---
+
+## 📋 运行要求
+
+- **Go 1.24** 或更高版本
+- **OpenSSL**（用于生成本地 CA 根证书及私钥）
+
+---
+
+## 🚀 快速开始
+
+### 1. 生成本地 CA 根证书与私钥
+
+代理需要使用本地自签的证书颁发机构（CA）动态签发目标站点的中间人证书。
+
+```bash
+mkdir -p ssl
+openssl genrsa -out ssl/ca.key 2048
+openssl req -x509 -new -nodes -key ssl/ca.key -sha256 -days 3650 -out ssl/ca.crt -subj "//CN=reservoir"
+```
+
+> ⚠️ **安全红线**：切勿将 `ssl/ca.key` 提交至任何公共代码仓库！持有 CA 私钥可对信任该 CA 的机器发起中间人攻击。
+
+### 2. 在客户端信任该 CA 根证书
+
+- **Linux**:
+  ```bash
+  sudo cp ssl/ca.crt /usr/local/share/ca-certificates/reservoir.crt
+  sudo update-ca-certificates
+  ```
+- **Windows**:
+  双击 `ssl/ca.crt`，点击“安装证书”，选择安装至“受信任的根证书颁发机构”。
+- **Docker / 容器**:
+  在容器初始化脚本中将 `ssl/ca.crt` 挂载并加入容器内的 CA 信任列表。
+
+### 3. 编译与运行
+
+```bash
+# 编译二进制
+make build
+# 或者直接：go build -o reservoir main.go
+
+# 启动代理（默认监听 0.0.0.0:9999）
+./reservoir --listen 0.0.0.0:9999 --ca-cert ssl/ca.crt --ca-key ssl/ca.key
+```
+
+也可以直接通过 make 快速运行：
+```bash
+make run
+```
+
+---
+
+## ⚙️ 配置参数
+
+配置可通过命令行参数或直接编辑 `var/config.json` 文件指定：
+
+| 参数标志 | 默认值 | 说明 |
+| :--- | :--- | :--- |
+| `--listen` | `0.0.0.0:9999` | 代理监听的地址与端口 |
+| `--ca-cert` | `ssl/ca.crt` | 本地 CA 证书路径（PEM 格式） |
+| `--ca-key` | `ssl/ca.key` | 本地 CA 私钥路径（PEM 格式） |
+| `--cache-dir` | `var/cache/` | 静态资源缓存落盘目录 |
+| `--log-level` | `INFO` | 日志级别（`DEBUG`, `INFO`, `WARN`, `ERROR`） |
+| `--log-to-stdout` | `true` | 是否输出日志到控制台标准输出 |
+
+---
+
+## 🧪 自动化测试
+
+```bash
+# 运行全部单元测试（含并发竞态检测）
+go test -v -race ./...
+```
+
+---
+
+## 📄 开源许可证
+
+本项目基于 [Apache License 2.0](LICENSE) 开源。
