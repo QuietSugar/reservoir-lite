@@ -342,10 +342,14 @@ func (p *Proxy) isPurgeRequest(req *http.Request) bool {
 		return true
 	}
 	cleanPath := path.Clean(req.URL.Path)
-	if cleanPath == "/__purge" || cleanPath == "/__cache/purge" {
+	if cleanPath == "/__purge" || cleanPath == "/__cache/purge" || cleanPath == "/__stats" {
 		return true
 	}
-	if cleanPath == "/purge" && (req.URL.Query().Get("all") != "" || req.URL.Query().Get("url") != "") {
+	if cleanPath == "/purge" || cleanPath == "/dashboard" || cleanPath == "/admin" {
+		return true
+	}
+	// Direct request to proxy root (e.g. http://localhost:9999/ or http://<proxy-ip>:9999/)
+	if cleanPath == "/" && !strings.HasPrefix(req.RequestURI, "http://") && !strings.HasPrefix(req.RequestURI, "https://") {
 		return true
 	}
 	return false
@@ -420,11 +424,37 @@ func (p *Proxy) purgeRequest(req *http.Request) (bool, error) {
 }
 
 func (p *Proxy) handlePurgeEndpoint(r responder.Responder, req *http.Request) error {
+	cleanPath := path.Clean(req.URL.Path)
+
+	// API: Stats endpoint
+	if cleanPath == "/__stats" {
+		memUsed := p.cache.GetMemByteSize()
+		maxMem := p.cache.GetMaxMemCacheSize()
+		diskUsed := p.cache.GetDiskByteSize()
+		maxDisk := int64(0)
+		if config.Global != nil {
+			maxDisk = config.Global.MaxCacheSize.Read().Bytes()
+		}
+		entries := p.cache.GetEntriesCount()
+		return p.writeJSON(r, http.StatusOK, map[string]any{
+			"status":          "ok",
+			"mem_used_bytes":  memUsed,
+			"mem_max_bytes":   maxMem,
+			"mem_enabled":     maxMem > 0,
+			"disk_used_bytes": diskUsed,
+			"disk_max_bytes":  maxDisk,
+			"entries_count":   entries,
+			"cache_hits":      metrics.Global.Cache.CacheHits.Get(),
+			"mem_cache_hits":  metrics.Global.Cache.MemCacheHits.Get(),
+		})
+	}
+
 	query := req.URL.Query()
 	allParam := query.Get("all")
 	urlParam := query.Get("url")
+	memParam := query.Get("mem")
 
-	// 1. Purge all cache
+	// 1. Purge all cache (RAM + Disk)
 	if allParam == "1" || strings.ToLower(allParam) == "true" {
 		count, err := p.cache.PurgeAll()
 		if err != nil {
@@ -439,11 +469,23 @@ func (p *Proxy) handlePurgeEndpoint(r responder.Responder, req *http.Request) er
 			"status":       "ok",
 			"action":       "purge_all",
 			"purged_count": count,
-			"message":      fmt.Sprintf("Successfully purged %d cache entries", count),
+			"message":      fmt.Sprintf("成功清空全部 %d 个静态资源缓存（内存 + 磁盘）", count),
 		})
 	}
 
-	// 2. Purge by target URL parameter
+	// 2. Purge memory cache only
+	if memParam == "1" || strings.ToLower(memParam) == "true" {
+		count := p.cache.PurgeMemOnly()
+		slog.Info("Purged memory cache via endpoint", "purged_count", count)
+		return p.writeJSON(r, http.StatusOK, map[string]any{
+			"status":       "ok",
+			"action":       "purge_mem",
+			"purged_count": count,
+			"message":      fmt.Sprintf("成功释放内存缓存，清空了 %d 个内存对象（磁盘文件仍保留）", count),
+		})
+	}
+
+	// 3. Purge by target URL parameter
 	if urlParam != "" {
 		purged, err := p.purgeByTargetURL(urlParam)
 		if err != nil {
@@ -463,7 +505,7 @@ func (p *Proxy) handlePurgeEndpoint(r responder.Responder, req *http.Request) er
 				"action":  "purge_url",
 				"url":     urlParam,
 				"purged":  true,
-				"message": "Cache entry deleted",
+				"message": fmt.Sprintf("已成功清除目标资源缓存: %s", urlParam),
 			})
 		}
 
@@ -473,11 +515,11 @@ func (p *Proxy) handlePurgeEndpoint(r responder.Responder, req *http.Request) er
 			"action":  "purge_url",
 			"url":     urlParam,
 			"purged":  false,
-			"message": "No matching cache entry found",
+			"message": fmt.Sprintf("未在缓存中找到该资源: %s", urlParam),
 		})
 	}
 
-	// 3. HTTP PURGE method
+	// 4. HTTP PURGE method
 	if req.Method == "PURGE" {
 		purged, err := p.purgeRequest(req)
 		if err != nil {
@@ -507,97 +549,30 @@ func (p *Proxy) handlePurgeEndpoint(r responder.Responder, req *http.Request) er
 		})
 	}
 
-	// 4. Interactive HTML UI when requested from a browser
-	if strings.Contains(req.Header.Get("Accept"), "text/html") {
-		html := `<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="utf-8">
-  <title>reservoir-lite Cache Management</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <style>
-    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; max-width: 680px; margin: 40px auto; padding: 0 20px; color: #24292e; background: #fafbfc; line-height: 1.5; }
-    h1 { border-bottom: 1px solid #e1e4e8; padding-bottom: 12px; margin-bottom: 24px; font-size: 22px; }
-    .card { background: white; border: 1px solid #e1e4e8; border-radius: 8px; padding: 20px; margin-bottom: 20px; box-shadow: 0 1px 3px rgba(0,0,0,0.04); }
-    h3 { margin-top: 0; margin-bottom: 10px; font-size: 16px; }
-    p { margin-top: 0; margin-bottom: 12px; color: #586069; font-size: 14px; }
-    input[type=text] { width: 100%; padding: 10px 12px; border: 1px solid #d1d5da; border-radius: 6px; box-sizing: border-box; margin-bottom: 12px; font-size: 14px; }
-    input[type=text]:focus { outline: none; border-color: #0366d6; box-shadow: 0 0 0 3px rgba(3,102,214,0.3); }
-    button { background: #2ea44f; color: white; border: none; padding: 9px 18px; border-radius: 6px; font-size: 14px; font-weight: 600; cursor: pointer; }
-    button.danger { background: #d73a49; }
-    button:hover { opacity: 0.9; }
-    pre { background: #f6f8fa; padding: 12px; border-radius: 6px; font-size: 13px; overflow-x: auto; font-family: monospace; }
-    #resultBox { display: none; margin-top: 15px; padding: 12px; border-radius: 6px; font-family: monospace; font-size: 13px; white-space: pre-wrap; word-break: break-all; }
-  </style>
-</head>
-<body>
-  <h1>🌊 reservoir-lite Cache Manager</h1>
-  <div class="card">
-    <h3>Clear Specific Resource</h3>
-    <p>Enter the full target URL to invalidate its cached copy.</p>
-    <form id="urlForm" onsubmit="event.preventDefault(); submitUrlPurge();">
-      <input type="text" id="targetUrl" placeholder="https://121.29.88.190:39092/static/js/chunk-vendors.d3883a48.js" required>
-      <button type="submit">Purge URL</button>
-    </form>
-  </div>
-  <div class="card">
-    <h3>Clear Entire Cache</h3>
-    <p>Permanently remove all cached files on disk and reset cache size.</p>
-    <button type="button" class="danger" onclick="submitPurgeAll()">Purge All Cache</button>
-  </div>
-  <div id="resultBox" class="card"></div>
-  <div class="card">
-    <h3>API & CLI Examples</h3>
-    <pre># Purge entire cache
-curl http://&lt;proxy&gt;:9999/__purge?all=1
-
-# Purge specific URL
-curl http://&lt;proxy&gt;:9999/__purge?url=https://121.29.88.190:39092/foo.js
-
-# HTTP PURGE method via proxy
-curl -X PURGE -x http://&lt;proxy&gt;:9999 https://121.29.88.190:39092/foo.js</pre>
-  </div>
-  <script>
-    async function showResult(promise) {
-      const box = document.getElementById('resultBox');
-      box.style.display = 'block';
-      box.textContent = 'Purging...';
-      try {
-        const res = await promise;
-        const data = await res.json();
-        box.textContent = JSON.stringify(data, null, 2);
-        box.style.background = res.ok ? '#dcffe4' : '#ffeef0';
-        box.style.borderColor = res.ok ? '#34d058' : '#d73a49';
-      } catch (err) {
-        box.textContent = 'Error: ' + err.message;
-        box.style.background = '#ffeef0';
-        box.style.borderColor = '#d73a49';
-      }
-    }
-    function submitUrlPurge() {
-      const url = document.getElementById('targetUrl').value.trim();
-      if (!url) return;
-      showResult(fetch('/__purge?url=' + encodeURIComponent(url)));
-    }
-    function submitPurgeAll() {
-      if (!confirm('Are you sure you want to purge ALL cached assets?')) return;
-      showResult(fetch('/__purge?all=1'));
-    }
-  </script>
-</body>
-</html>`
+	// 5. Interactive HTML Web UI
+	if strings.Contains(req.Header.Get("Accept"), "text/html") || cleanPath == "/" || cleanPath == "/dashboard" || cleanPath == "/admin" || cleanPath == "/purge" || cleanPath == "/__purge" {
 		r.SetHeader("Content-Type", "text/html; charset=utf-8")
-		r.SetHeader("Content-Length", strconv.Itoa(len(html)))
-		_, _ = r.Write(http.StatusOK, strings.NewReader(html))
+		r.SetHeader("Content-Length", strconv.Itoa(len(dashboardHTML)))
+		_, _ = r.Write(http.StatusOK, strings.NewReader(dashboardHTML))
 		return nil
 	}
 
-	// 5. Default JSON instructions
+	// 6. Default JSON instructions & stats
+	memUsed := p.cache.GetMemByteSize()
+	maxMem := p.cache.GetMaxMemCacheSize()
 	return p.writeJSON(r, http.StatusOK, map[string]any{
 		"status": "info",
 		"name":   "reservoir-lite",
+		"memory_cache": map[string]any{
+			"enabled":        maxMem > 0,
+			"used_bytes":     memUsed,
+			"max_bytes":      maxMem,
+			"mem_cache_hits": metrics.Global.Cache.MemCacheHits.Get(),
+		},
 		"instructions": map[string]string{
+			"dashboard":   "GET / (Browser Web UI)",
 			"purge_all":   "GET /__purge?all=1",
+			"purge_mem":   "GET /__purge?mem=1",
 			"purge_url":   "GET /__purge?url=<target_url>",
 			"http_method": "PURGE <target_url> (via proxy)",
 		},

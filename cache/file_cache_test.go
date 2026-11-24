@@ -169,3 +169,92 @@ func TestFileCache_PurgeAll_And_Delete(t *testing.T) {
 		t.Fatalf("expected ErrCacheMiss for key2, got %v", err)
 	}
 }
+
+func TestFileCache_MemoryCache(t *testing.T) {
+	tmpDir := t.TempDir()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	fc := NewFileCache[testData](tmpDir, 10*time.Minute, ctx)
+	defer fc.Destroy()
+
+	// 1. When max memory size is 0: memory caching is disabled
+	fc.SetMaxMemCacheSize(0)
+	key0 := CacheKey{Hex: "mem0"}
+	content0 := []byte("disk only content")
+	e0, err := fc.Cache(key0, bytes.NewReader(content0), time.Now().Add(1*time.Hour), testData{})
+	if err != nil {
+		t.Fatalf("failed to cache: %v", err)
+	}
+	e0.Data.Close()
+
+	if fc.GetMemByteSize() != 0 {
+		t.Fatalf("expected 0 memory usage when disabled, got %d", fc.GetMemByteSize())
+	}
+
+	hit0, err := fc.Get(key0)
+	if err != nil {
+		t.Fatalf("failed to get: %v", err)
+	}
+	hit0.Data.Close()
+
+	// 2. Enable memory cache with 500 bytes
+	fc.SetMaxMemCacheSize(500)
+	key1 := CacheKey{Hex: "mem1"}
+	content1 := []byte("hello memory cached world")
+	e1, err := fc.Cache(key1, bytes.NewReader(content1), time.Now().Add(1*time.Hour), testData{})
+	if err != nil {
+		t.Fatalf("failed to cache: %v", err)
+	}
+	e1.Data.Close()
+
+	if fc.GetMemByteSize() != int64(len(content1)) {
+		t.Fatalf("expected memory byte size %d, got %d", len(content1), fc.GetMemByteSize())
+	}
+
+	// Read should hit memory
+	hit1, err := fc.Get(key1)
+	if err != nil {
+		t.Fatalf("failed to get from memory cache: %v", err)
+	}
+	defer hit1.Data.Close()
+
+	data1, err := io.ReadAll(hit1.Data)
+	if err != nil || !bytes.Equal(data1, content1) {
+		t.Fatalf("data mismatch from memory cache: %s", data1)
+	}
+
+	// 3. Test LRU Eviction: small limit (50 bytes)
+	fc.SetMaxMemCacheSize(50)
+	key2 := CacheKey{Hex: "mem2"}
+	content2 := bytes.Repeat([]byte("A"), 30)
+	e2, err := fc.Cache(key2, bytes.NewReader(content2), time.Now().Add(1*time.Hour), testData{})
+	if err != nil {
+		t.Fatalf("failed to cache key2: %v", err)
+	}
+	e2.Data.Close()
+
+	key3 := CacheKey{Hex: "mem3"}
+	content3 := bytes.Repeat([]byte("B"), 30)
+	e3, err := fc.Cache(key3, bytes.NewReader(content3), time.Now().Add(1*time.Hour), testData{})
+	if err != nil {
+		t.Fatalf("failed to cache key3: %v", err)
+	}
+	e3.Data.Close()
+
+	// Memory usage should not exceed limit
+	if fc.GetMemByteSize() > 50 {
+		t.Fatalf("memory usage %d exceeded limit 50", fc.GetMemByteSize())
+	}
+
+	// key2 might be evicted from memory, but MUST still be readable from disk!
+	hit2, err := fc.Get(key2)
+	if err != nil {
+		t.Fatalf("failed to get key2 after memory eviction: %v", err)
+	}
+	defer hit2.Data.Close()
+	data2, _ := io.ReadAll(hit2.Data)
+	if !bytes.Equal(data2, content2) {
+		t.Fatalf("corrupted content for key2")
+	}
+}

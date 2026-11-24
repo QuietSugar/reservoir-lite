@@ -36,6 +36,7 @@ type Config struct {
 	CacheDir                ConfigProp[string]            `json:"cache_dir"`                   // The directory where cached files will be stored.
 	IgnoreCacheControl      ConfigProp[bool]              `json:"ignore_cache_control"`        // If true, the proxy will ignore Cache-Control headers from the upstream response.
 	MaxCacheSize            ConfigProp[bytesize.ByteSize] `json:"max_cache_size"`              // The maximum size of the cache in bytes. If the cache exceeds this size, entries will be evicted.
+	MaxMemCacheSize         ConfigProp[bytesize.ByteSize] `json:"max_mem_cache_size"`          // The maximum size of memory cache in bytes. 0 to disable memory caching.
 	DefaultCacheMaxAge      ConfigProp[duration.Duration] `json:"default_cache_max_age"`       // The default cache max age to use if the upstream response does not specify a Cache-Control or Expires header.
 	ForceDefaultCacheMaxAge ConfigProp[bool]              `json:"force_default_cache_max_age"` // If true, always use the default cache max age even if the upstream response has a Cache-Control or Expires header.
 	CacheCleanupInterval    ConfigProp[duration.Duration] `json:"cache_cleanup_interval"`      // The interval at which the cache will be cleaned up to remove expired entries.
@@ -75,6 +76,7 @@ func newDefault() *Config {
 		CacheDir:                NewConfigProp("var/cache/"),
 		IgnoreCacheControl:      NewConfigProp(true), // This this is primarily targeted at caching package managers, we want to cache aggressively by default.
 		MaxCacheSize:            NewConfigProp(bytesize.ParseUnchecked("10G")),
+		MaxMemCacheSize:         NewConfigProp(bytesize.ParseUnchecked("100M")),
 		DefaultCacheMaxAge:      NewConfigProp(duration.Duration(30 * 24 * time.Hour)), // Defaults to 30 days long-term static cache
 		ForceDefaultCacheMaxAge: NewConfigProp(true), // Since this is again primarily targeted at caching apt repositories, we want to cache aggressively by default.
 		CacheCleanupInterval:    NewConfigProp(duration.Duration(90 * time.Minute)),

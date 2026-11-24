@@ -52,6 +52,9 @@ func OverrideGlobalConfigFromFlags() {
 	fl.AddString("max-cache-size", "", "Maximum cache size (e.g. 10G, 500M)").OnSet(func(val flags.FlagValue) {
 		Global.MaxCacheSize.Overwrite(val.AsBytesize())
 	})
+	fl.AddString("max-mem-cache-size", "100M", "Maximum memory cache size (e.g. 100M, 500M, 0 to disable)").OnSet(func(val flags.FlagValue) {
+		Global.MaxMemCacheSize.Overwrite(val.AsBytesize())
+	})
 
 	fl.AddString("webserver-listen", "localhost:8080", "The address and port that the webserver (dashboard and API) will listen on").OnSet(func(val flags.FlagValue) {
 		Global.WebserverListen.Overwrite(val.AsString())

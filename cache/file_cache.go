@@ -29,21 +29,32 @@ var (
 )
 
 type FileCache[ObjectData any] struct {
-	rootDir  assertedpath.AssertedPath
-	locks    *syncmap.SyncMap[string, *sync.RWMutex]
-	entries  map[CacheKey]*EntryMetadata[ObjectData]
-	byteSize int64
-	stopChan chan struct{}
+	rootDir     assertedpath.AssertedPath
+	locks       *syncmap.SyncMap[string, *sync.RWMutex]
+	entries     map[CacheKey]*EntryMetadata[ObjectData]
+	byteSize    int64
+	stopChan    chan struct{}
+	memEntries  map[CacheKey][]byte
+	memByteSize int64
+	maxMemSize  int64 // In bytes, 0 means disabled
+	memLock     sync.RWMutex
 }
 
 // NewFileCache creates a new FileCache instance with the specified root directory.
 func NewFileCache[ObjectData any](rootDir string, cleanupInterval time.Duration, ctx context.Context) *FileCache[ObjectData] {
+	maxMem := int64(0)
+	if config.Global != nil {
+		maxMem = config.Global.MaxMemCacheSize.Read().Bytes()
+	}
 	c := &FileCache[ObjectData]{
-		rootDir:  assertedpath.AssertDirectory(rootDir).EnsureCleared(),
-		locks:    syncmap.New[string, *sync.RWMutex](),
-		entries:  make(map[CacheKey]*EntryMetadata[ObjectData]),
-		byteSize: 0,
-		stopChan: make(chan struct{}),
+		rootDir:     assertedpath.AssertDirectory(rootDir).EnsureCleared(),
+		locks:       syncmap.New[string, *sync.RWMutex](),
+		entries:     make(map[CacheKey]*EntryMetadata[ObjectData]),
+		byteSize:    0,
+		stopChan:    make(chan struct{}),
+		memEntries:  make(map[CacheKey][]byte),
+		memByteSize: 0,
+		maxMemSize:  maxMem,
 	}
 	c.startCleanupTask(cleanupInterval, ctx)
 	return c
@@ -241,7 +252,133 @@ func (c *FileCache[ObjectData]) ensureRemove(key CacheKey) error {
 	delete(c.entries, key)  // Remove the entry from the map
 	c.locks.Delete(key.Hex) // Remove the lock for this key
 
+	// Also remove from memory cache
+	c.memLock.Lock()
+	if buf, inMem := c.memEntries[key]; inMem {
+		c.memByteSize -= int64(len(buf))
+		delete(c.memEntries, key)
+		metrics.Global.Cache.MemBytesCached.Set(c.memByteSize)
+	}
+	c.memLock.Unlock()
+
 	return nil
+}
+
+func (c *FileCache[ObjectData]) ensureMemCacheSizeLocked(incomingSize int64) {
+	if c.maxMemSize <= 0 {
+		c.memEntries = make(map[CacheKey][]byte)
+		c.memByteSize = 0
+		return
+	}
+
+	// While adding incomingSize would exceed maxMemSize, evict LRU entry
+	for c.memByteSize+incomingSize > c.maxMemSize && len(c.memEntries) > 0 {
+		var oldestKey CacheKey
+		var oldestTime time.Time
+		first := true
+
+		for k := range c.memEntries {
+			var lastAccess time.Time
+			if meta, ok := c.entries[k]; ok {
+				lastAccess = meta.LastAccess
+			}
+			if first || lastAccess.Before(oldestTime) {
+				oldestKey = k
+				oldestTime = lastAccess
+				first = false
+			}
+		}
+
+		if first {
+			break
+		}
+
+		if buf, ok := c.memEntries[oldestKey]; ok {
+			c.memByteSize -= int64(len(buf))
+			delete(c.memEntries, oldestKey)
+			metrics.Global.Cache.MemBytesCached.Set(c.memByteSize)
+			slog.Debug("Evicted entry from memory cache", "key", oldestKey.Hex, "size", len(buf), "current_mem_size", c.memByteSize)
+		}
+	}
+}
+
+func (c *FileCache[ObjectData]) putMemCache(key CacheKey, data []byte) {
+	if c.maxMemSize <= 0 {
+		return
+	}
+	size := int64(len(data))
+	if size > c.maxMemSize {
+		return
+	}
+
+	c.memLock.Lock()
+	defer c.memLock.Unlock()
+
+	if old, exists := c.memEntries[key]; exists {
+		c.memByteSize -= int64(len(old))
+	}
+
+	c.ensureMemCacheSizeLocked(size)
+	c.memEntries[key] = data
+	c.memByteSize += size
+	metrics.Global.Cache.MemBytesCached.Set(c.memByteSize)
+	slog.Debug("Cached entry in memory", "key", key.Hex, "size", size, "total_mem_size", c.memByteSize)
+}
+
+func (c *FileCache[ObjectData]) getMemCache(key CacheKey) ([]byte, bool) {
+	if c.maxMemSize <= 0 {
+		return nil, false
+	}
+
+	c.memLock.RLock()
+	data, exists := c.memEntries[key]
+	c.memLock.RUnlock()
+
+	return data, exists
+}
+
+func (c *FileCache[ObjectData]) SetMaxMemCacheSize(size int64) {
+	c.memLock.Lock()
+	defer c.memLock.Unlock()
+	c.maxMemSize = size
+	if size <= 0 {
+		c.memEntries = make(map[CacheKey][]byte)
+		c.memByteSize = 0
+		metrics.Global.Cache.MemBytesCached.Set(0)
+	} else {
+		c.ensureMemCacheSizeLocked(0)
+	}
+}
+
+func (c *FileCache[ObjectData]) GetMaxMemCacheSize() int64 {
+	c.memLock.RLock()
+	defer c.memLock.RUnlock()
+	return c.maxMemSize
+}
+
+func (c *FileCache[ObjectData]) GetMemByteSize() int64 {
+	c.memLock.RLock()
+	defer c.memLock.RUnlock()
+	return c.memByteSize
+}
+
+func (c *FileCache[ObjectData]) PurgeMemOnly() int {
+	c.memLock.Lock()
+	defer c.memLock.Unlock()
+	count := len(c.memEntries)
+	c.memEntries = make(map[CacheKey][]byte)
+	c.memByteSize = 0
+	metrics.Global.Cache.MemBytesCached.Set(0)
+	slog.Info("Successfully purged memory cache", "count", count)
+	return count
+}
+
+func (c *FileCache[ObjectData]) GetDiskByteSize() int64 {
+	return c.byteSize
+}
+
+func (c *FileCache[ObjectData]) GetEntriesCount() int {
+	return len(c.entries)
 }
 
 func (c *FileCache[ObjectData]) Get(key CacheKey) (*Entry[ObjectData], error) {
@@ -249,21 +386,12 @@ func (c *FileCache[ObjectData]) Get(key CacheKey) (*Entry[ObjectData], error) {
 	lock.Lock() // Upgraded from RLock to Lock to prevent data race on LastAccess
 	defer lock.Unlock()
 
-	fileName := filepath.Join(c.rootDir.Path, key.Hex)
 	entryMeta, exists := c.entries[key]
 	if !exists {
 		metrics.Global.Cache.CacheMisses.Increment()
 		slog.Debug("Cache miss", "key", key.Hex)
 		return nil, ErrCacheMiss
 	}
-
-	dataFile, err := os.Open(fileName)
-	if err != nil {
-		metrics.Global.Cache.CacheErrors.Increment()
-		slog.Error("Failed to open cached data file", "key", key.Hex, "error", err)
-		return nil, fmt.Errorf("%w: failed to open cached data file '%s'", ErrCacheFileRead, fileName)
-	}
-	// We don't close dataFile here since we are returning it in the Entry.
 
 	stale := false
 	if entryMeta.Expires.Before(time.Now()) {
@@ -272,8 +400,36 @@ func (c *FileCache[ObjectData]) Get(key CacheKey) (*Entry[ObjectData], error) {
 
 	entryMeta.LastAccess = time.Now()
 
+	// 1. Try L1 memory cache
+	if memData, ok := c.getMemCache(key); ok {
+		metrics.Global.Cache.CacheHits.Increment()
+		metrics.Global.Cache.MemCacheHits.Increment()
+		slog.Debug("Memory cache hit", "key", key.Hex, "size", len(memData))
+		return &Entry[ObjectData]{
+			Data:     NewReadSeekNopCloser(memData),
+			Metadata: entryMeta,
+			Stale:    stale,
+		}, nil
+	}
+
+	// 2. Fall back to L2 disk cache
+	fileName := filepath.Join(c.rootDir.Path, key.Hex)
+	dataFile, err := os.Open(fileName)
+	if err != nil {
+		metrics.Global.Cache.CacheErrors.Increment()
+		slog.Error("Failed to open cached data file", "key", key.Hex, "error", err)
+		return nil, fmt.Errorf("%w: failed to open cached data file '%s'", ErrCacheFileRead, fileName)
+	}
+
+	// Promote to memory cache if enabled and within size limit
+	if c.maxMemSize > 0 && entryMeta.FileSize <= c.maxMemSize {
+		if buf, readErr := os.ReadFile(fileName); readErr == nil {
+			c.putMemCache(key, buf)
+		}
+	}
+
 	metrics.Global.Cache.CacheHits.Increment()
-	slog.Debug("Successful cache hit", "key", key.Hex)
+	slog.Debug("Disk cache hit", "key", key.Hex)
 	return &Entry[ObjectData]{
 		Data:     dataFile,
 		Metadata: entryMeta,
@@ -333,6 +489,21 @@ func (c *FileCache[ObjectData]) Cache(key CacheKey, data io.Reader, expires time
 		return nil, fmt.Errorf("%w: failed to seek to start of cache file '%s'", ErrCacheFileRead, fileName)
 	}
 
+	// If memory cache is enabled and file size fits, store copy in memory
+	if c.maxMemSize > 0 && fileSize <= c.maxMemSize {
+		memBuf := make([]byte, fileSize)
+		if _, readErr := io.ReadFull(file, memBuf); readErr == nil {
+			c.putMemCache(key, memBuf)
+			file.Close() // Safely persisted to disk; serve initial request directly from memory
+			return &Entry[ObjectData]{
+				Data:     NewReadSeekNopCloser(memBuf),
+				Metadata: meta,
+			}, nil
+		}
+		// If read failed, rewind file for reading
+		_, _ = file.Seek(0, io.SeekStart)
+	}
+
 	return &Entry[ObjectData]{
 		Data:     file,
 		Metadata: meta,
@@ -386,6 +557,12 @@ func (c *FileCache[ObjectData]) PurgeAll() (int, error) {
 	}
 
 	c.byteSize = 0
+	c.memLock.Lock()
+	c.memEntries = make(map[CacheKey][]byte)
+	c.memByteSize = 0
+	metrics.Global.Cache.MemBytesCached.Set(0)
+	c.memLock.Unlock()
+
 	metrics.Global.Cache.BytesCached.Set(0)
 	metrics.Global.Cache.CacheEntries.Set(0)
 	slog.Info("Successfully purged all cache entries", "purged_count", count)

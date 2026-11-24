@@ -90,7 +90,8 @@ make run
 | `--ca-key` | `ssl/ca.key` | 本地 CA 私钥路径（PEM 格式） |
 | `--cache-dir` | `var/cache/` | 静态资源缓存落盘目录 |
 | `--cache-max-age` | `720h` (30天) | 默认静态缓存有效期（如 `720h`, `24h`, `30m`） |
-| `--max-cache-size` | `10G` | 最大缓存占用上限（如 `10G`, `500M`） |
+| `--max-cache-size` | `10G` | 最大磁盘缓存占用上限（如 `10G`, `500M`） |
+| `--max-mem-cache-size` | `100M` | 内存热缓存上限（如 `100M`, `500M`；设为 `0` 代表仅使用磁盘） |
 | `--no-api` | `false` | 关闭内嵌管理 API/控制台 |
 | `--log-level` | `INFO` | 日志级别（`DEBUG`, `INFO`, `WARN`, `ERROR`） |
 | `--log-to-stdout` | `true` | 是否输出日志到控制台标准输出 |

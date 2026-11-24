@@ -80,7 +80,8 @@ Settings can be specified via command-line flags or in `var/config.json`:
 | `--ca-key` | `ssl/ca.key` | Path to CA private key (PEM) |
 | `--cache-dir` | `var/cache/` | Directory where cached assets are stored |
 | `--cache-max-age` | `720h` (30 days) | Default cache expiration max age (e.g. `720h`, `24h`, `30m`) |
-| `--max-cache-size` | `10G` | Maximum cache size on disk (e.g. `10G`, `500M`) |
+| `--max-cache-size` | `10G` | Maximum disk cache size (e.g. `10G`, `500M`) |
+| `--max-mem-cache-size` | `100M` | Maximum RAM L1 cache size (e.g. `100M`, `500M`, `0` to disable) |
 | `--no-api` | `false` | Disable embedded API and web dashboard |
 | `--log-level` | `INFO` | Logging level (`DEBUG`, `INFO`, `WARN`, `ERROR`) |
 | `--log-to-stdout` | `true` | Log to standard output |

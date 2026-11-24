@@ -8,6 +8,8 @@ type cacheMetrics struct {
 	CacheErrors      atomics.Int64 `json:"cache_errors"`
 	CacheEntries     atomics.Int64 `json:"cache_entries"`
 	BytesCached      atomics.Int64 `json:"bytes_cached"`
+	MemCacheHits     atomics.Int64 `json:"mem_cache_hits"`
+	MemBytesCached   atomics.Int64 `json:"mem_bytes_cached"`
 	CleanupRuns      atomics.Int64 `json:"cleanup_runs"`
 	BytesCleaned     atomics.Int64 `json:"bytes_cleaned"`
 	CacheEvictions   atomics.Int64 `json:"cache_evictions"`
@@ -22,6 +24,8 @@ func NewCacheMetrics() cacheMetrics {
 		CacheErrors:      atomics.NewInt64(0),
 		CacheEntries:     atomics.NewInt64(0),
 		BytesCached:      atomics.NewInt64(0),
+		MemCacheHits:     atomics.NewInt64(0),
+		MemBytesCached:   atomics.NewInt64(0),
 		CleanupRuns:      atomics.NewInt64(0),
 		BytesCleaned:     atomics.NewInt64(0),
 		CacheEvictions:   atomics.NewInt64(0),
