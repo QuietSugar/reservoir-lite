@@ -44,9 +44,7 @@ func OverrideGlobalConfigFromFlags() {
 	fl.AddString("webserver-listen", "localhost:8080", "The address and port that the webserver (dashboard and API) will listen on").OnSet(func(val flags.FlagValue) {
 		Global.WebserverListen.Overwrite(val.AsString())
 	})
-	fl.AddBool("no-dashboard", false, "Disable the dashboard. The API must also be enabled if the dashboard is enabled.").OnSet(func(val flags.FlagValue) {
-		Global.DashboardDisabled.Overwrite(val.AsBool())
-	})
+
 	fl.AddBool("no-api", false, "Disable the API").OnSet(func(val flags.FlagValue) {
 		Global.ApiDisabled.Overwrite(val.AsBool())
 	})

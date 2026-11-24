@@ -3,7 +3,6 @@ package middleware
 import (
 	"log/slog"
 	"net/http"
-	"reservoir/webserver/dashboard/csp"
 )
 
 func Harden(next http.Handler) http.Handler {
@@ -15,7 +14,6 @@ func Harden(next http.Handler) http.Handler {
 		respHeaders.Set("Referrer-Policy", "no-referrer")
 		respHeaders.Set("X-Frame-Options", "DENY")
 		respHeaders.Set("X-Content-Type-Options", "nosniff")
-		respHeaders.Set("Content-Security-Policy", csp.Header /* If this isn't defined, you need to run the generator */)
 		respHeaders.Set("Permissions-Policy", "camera=(), microphone=(), geolocation=(), payment=(), usb=(), magnetometer=(), accelerometer=(), gyroscope=()")
 
 		site := r.Header.Get("Sec-Fetch-Site")

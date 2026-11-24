@@ -24,7 +24,7 @@ func (m *AllMetricsEndpoint) EndpointMethods() []apitypes.EndpointMethod {
 	}
 }
 
-func (m *AllMetricsEndpoint) Get(w http.ResponseWriter, r *http.Request, ctx apitypes.Context) {
+func (m *AllMetricsEndpoint) Get(w http.ResponseWriter, r *http.Request) {
 	metrics.Global.RunCollectors() // Run all collectors to make sure we get updated metrics
 
 	metricsJson, err := json.Marshal(metrics.Global)

@@ -32,7 +32,6 @@ type Config struct {
 	RetryOnRange416         ConfigProp[bool]              `json:"retry_on_range_416"`          // If true, the proxy will retry a request without the Range header if the upstream responds with a 416 Range Not Satisfiable.
 	RetryOnInvalidRange     ConfigProp[bool]              `json:"retry_on_invalid_range"`      // If true, the proxy will retry a request without the Range header if the client sends an invalid Range header. (not recommended)
 	WebserverListen         ConfigProp[string]            `json:"webserver_listen"`            // The address and port that the webserver (dashboard and API) will listen on.
-	DashboardDisabled       ConfigProp[bool]              `json:"dashboard_disabled"`          // If true, the dashboard will be disabled. The API must also be enabled if the dashboard is enabled.
 	ApiDisabled             ConfigProp[bool]              `json:"api_disabled"`                // If true, the API will be disabled.
 	CacheDir                ConfigProp[string]            `json:"cache_dir"`                   // The directory where cached files will be stored.
 	IgnoreCacheControl      ConfigProp[bool]              `json:"ignore_cache_control"`        // If true, the proxy will ignore Cache-Control headers from the upstream response.
@@ -54,7 +53,6 @@ func (c *Config) setRestartNeededProps() {
 	c.CaCert.SetRequiresRestart()
 	c.CaKey.SetRequiresRestart()
 	c.WebserverListen.SetRequiresRestart()
-	c.DashboardDisabled.SetRequiresRestart()
 	c.ApiDisabled.SetRequiresRestart()
 	c.LogFile.SetRequiresRestart()
 	c.LogFileMaxSize.SetRequiresRestart()
@@ -73,7 +71,6 @@ func newDefault() *Config {
 		RetryOnRange416:         NewConfigProp(true),
 		RetryOnInvalidRange:     NewConfigProp(false),
 		WebserverListen:         NewConfigProp("localhost:8080"),
-		DashboardDisabled:       NewConfigProp(false),
 		ApiDisabled:             NewConfigProp(false),
 		CacheDir:                NewConfigProp("var/cache/"),
 		IgnoreCacheControl:      NewConfigProp(true), // This this is primarily targeted at caching package managers, we want to cache aggressively by default.

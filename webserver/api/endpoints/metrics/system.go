@@ -24,7 +24,7 @@ func (m *SystemMetricsEndpoint) EndpointMethods() []apitypes.EndpointMethod {
 	}
 }
 
-func (m *SystemMetricsEndpoint) Get(w http.ResponseWriter, r *http.Request, ctx apitypes.Context) {
+func (m *SystemMetricsEndpoint) Get(w http.ResponseWriter, r *http.Request) {
 	metrics.Global.System.Collect() // Run the system metrics collector
 
 	systemJson, err := json.Marshal(metrics.Global.System)

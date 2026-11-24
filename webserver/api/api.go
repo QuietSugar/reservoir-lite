@@ -6,9 +6,7 @@ import (
 	"log/slog"
 	"net/http"
 	"reservoir/webserver/api/apitypes"
-	"reservoir/webserver/api/auth"
 	"reservoir/webserver/api/endpoints/config"
-	"reservoir/webserver/api/endpoints/log"
 	"reservoir/webserver/api/endpoints/metrics"
 )
 
@@ -34,39 +32,22 @@ func New() *API {
 			&metrics.SystemMetricsEndpoint{},
 			&config.ConfigEndpoint{},
 			&config.RestartRequiredEndpoint{},
-			&log.LogEndpoint{},
-			&log.LogStreamEndpoint{},
-			&auth.LoginEndpoint{},
-			&auth.LogoutEndpoint{},
-			&auth.ChangePasswordEndpoint{},
 		},
 	}
 }
 
-func EnsureAllowed(ctx apitypes.Context, method apitypes.EndpointMethod) (statusCode int, err error) {
+func EnsureAllowed(method apitypes.EndpointMethod) (statusCode int, err error) {
 	if !method.RequiresAuth {
 		return http.StatusOK, nil
 	}
-
-	if !ctx.IsAuthenticated() {
-		return http.StatusUnauthorized, ErrEndpointUnauthorized
-	}
-
 	return http.StatusOK, nil
 }
 
-func WrapHandler(methodFunc apitypes.MethodFunc, preRunHook func(apitypes.Context) (statusCode int, err error)) http.HandlerFunc {
+func WrapHandler(methodFunc apitypes.MethodFunc, preRunHook func() (statusCode int, err error)) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		ctx, err := apitypes.CreateContext(r)
-		if err != nil {
-			slog.Error("Error creating request context", "error", err)
-			http.Error(w, "Internal Server Error", http.StatusInternalServerError)
-			return
-		}
-		defer ctx.Close()
 
 		if preRunHook != nil {
-			if status, err := preRunHook(ctx); err != nil {
+			if status, err := preRunHook(); err != nil {
 				if err == ErrEndpointUnauthorized {
 					http.Error(w, "Unauthorized", status)
 					return
@@ -78,7 +59,7 @@ func WrapHandler(methodFunc apitypes.MethodFunc, preRunHook func(apitypes.Contex
 			}
 		}
 
-		methodFunc(w, r, ctx)
+		methodFunc(w, r)
 	}
 }
 
@@ -96,8 +77,8 @@ func (api *API) RegisterHandlers(mux *http.ServeMux) error {
 			}
 
 			pattern := fmt.Sprintf("%s %s%s", method.Method, api.basePath, endpoint.Path())
-			mux.HandleFunc(pattern, WrapHandler(method.Func, func(ctx apitypes.Context) (int, error) {
-				return EnsureAllowed(ctx, method)
+			mux.HandleFunc(pattern, WrapHandler(method.Func, func() (int, error) {
+				return EnsureAllowed(method)
 			}))
 			slog.Debug("Registered API handler", "pattern", pattern, "endpoint", endpoint.Path())
 		}

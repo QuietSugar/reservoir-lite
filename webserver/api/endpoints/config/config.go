@@ -32,7 +32,7 @@ func (e *ConfigEndpoint) EndpointMethods() []apitypes.EndpointMethod {
 	}
 }
 
-func (e *ConfigEndpoint) Get(w http.ResponseWriter, r *http.Request, ctx apitypes.Context) {
+func (e *ConfigEndpoint) Get(w http.ResponseWriter, r *http.Request) {
 	responseJson, err := json.Marshal(config.Global)
 	if err != nil {
 		slog.Error("Error marshaling config to JSON", "error", err)
@@ -44,7 +44,7 @@ func (e *ConfigEndpoint) Get(w http.ResponseWriter, r *http.Request, ctx apitype
 	w.Write(responseJson)
 }
 
-func (e *ConfigEndpoint) Patch(w http.ResponseWriter, r *http.Request, ctx apitypes.Context) {
+func (e *ConfigEndpoint) Patch(w http.ResponseWriter, r *http.Request) {
 	if r.Header.Get("Content-Type") != "application/json" {
 		http.Error(w, "Content-Type must be application/json", http.StatusUnsupportedMediaType)
 		return
