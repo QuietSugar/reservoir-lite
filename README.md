@@ -143,6 +143,53 @@ docker run -d \
 
 ---
 
+## 🌐 Client Routing Setup
+
+Once `reservoir-lite` is running on `0.0.0.0:9999`, configure your client:
+
+### 1. Selective Browser Routing (Recommended: SwitchyOmega / ZeroOmega)
+To route only specific internal IPs or asset domains through the cache proxy:
+1. Install **ZeroOmega** or **SwitchyOmega** browser extension.
+2. Create an **HTTP Proxy Profile**:
+   - Protocol: `HTTP`
+   - Server: `127.0.0.1` (or your LAN server IP)
+   - Port: `9999`
+3. Create an **Auto Switch Profile** with routing conditions:
+   - `*://121.29.88.190:*/*` -> Proxy Profile
+   - Default -> `Direct`
+
+### 2. Operating System Global Proxy
+- **Windows**: Settings -> Network & Internet -> Proxy -> Set manual proxy to `127.0.0.1:9999`.
+- **macOS**: System Settings -> Network -> Details -> Proxies -> Enable HTTP & HTTPS proxy at `127.0.0.1:9999`.
+- **Linux**: Set system network proxy to manual `127.0.0.1:9999`.
+
+### 3. Command Line & Development Tools
+```bash
+export http_proxy="http://127.0.0.1:9999"
+export https_proxy="http://127.0.0.1:9999"
+
+# Single-shot test with curl
+curl -x http://127.0.0.1:9999 https://121.29.88.190:39092/
+```
+
+---
+
+## 📁 Caching Rules
+
+`reservoir-lite` applies a **strict static asset whitelist** for optimal performance:
+
+- **Whitelisted File Extensions**:
+  - Scripts & Styles: `.js`, `.mjs`, `.cjs`, `.css`, `.map`, `.wasm`
+  - Images & Media: `.png`, `.jpg`, `.jpeg`, `.gif`, `.svg`, `.webp`, `.ico`, `.avif`, `.mp4`, `.mp3`
+  - Fonts: `.woff`, `.woff2`, `.ttf`, `.eot`, `.otf`
+  - Data & Archives: `.json`, `.pdf`, `.zip`, `.tar`, `.gz`
+- **Dynamic API Bypass**:
+  - All non-static endpoints (API routes, `/api/...`, POST/PUT/DELETE methods) bypass caching entirely with zero memory or disk overhead.
+- **Query Parameter Preservation**:
+  - Versioned query strings (e.g., `app.js?v=20261124`) are uniquely hashed so cache bust parameters work as expected.
+
+---
+
 ## Configuration
 
 Settings can be specified via command-line flags or in `var/config.json`:
