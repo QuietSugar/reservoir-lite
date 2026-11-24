@@ -124,6 +124,39 @@ curl -X PURGE -x http://127.0.0.1:9999 https://121.29.88.190:39092/static/js/app
 
 ---
 
+## 🔍 故障排查与运行埋点 (Diagnostics & Observability)
+
+程序内置了多维度的运行埋点与诊断机制，发生问题时可通过以下 4 种途径进行快速排查：
+
+### 1. 客户端网络响应头 (F12 / curl)
+所有经由代理的响应均会注入诊断标头：
+- `X-Cache`: `HIT`（命中缓存）或 `MISS`（回源上游）。
+- `X-Cache-Tier`: `RAM`（内存直出）、`DISK`（磁盘读取）或 `UPSTREAM`（网络回源）。
+- `Cache-Status`: 标准 RFC 9211 缓存诊断头（如 `reservoir; hit; ttl=2591999` 或 `reservoir; miss; fwd-status=200; stored`）。
+- `Age`: 资源已在本地缓存中存活的秒数。
+- `Via`: `HTTP/1.1 reservoir`。
+
+### 2. Web 控制台实时排查面板
+浏览器访问 `http://<代理IP>:9999/`，在「运行状态与排查埋点」区域可直观看到：
+- **网络回源次数** (Upstream Requests)
+- **状态码分布** (2xx 成功、4xx 客户端错误、5xx 服务端错误)
+- **缓存异常数** (Cache Errors)
+- **运行时活跃协程** (Goroutines，排查协程泄露/卡死)
+
+### 3. JSON 监控埋点接口 (`/__stats`)
+支持运维监控探针或 Prometheus 采集：
+```bash
+curl http://127.0.0.1:9999/__stats
+```
+
+### 4. 结构化日志排查 (`slog`)
+可启用 `--log-level DEBUG` 输出毫秒级链路明细，支持写入指定文件：
+```bash
+./reservoir --log-level DEBUG --log-file var/proxy.log --log-to-stdout
+```
+
+---
+
 ## 🧪 自动化测试
 
 ```bash

@@ -22,4 +22,5 @@ type Entry[ObjectData any] struct {
 	Data     EntryData
 	Metadata *EntryMetadata[ObjectData]
 	Stale    bool // Indicates if the entry is stale, meaning it has expired but is still present in the cache.
+	FromMem  bool // Indicates if this entry was served directly from L1 RAM cache.
 }

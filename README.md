@@ -113,6 +113,25 @@ curl -X PURGE -x http://127.0.0.1:9999 https://121.29.88.190:39092/static/js/app
 
 ---
 
+## 🔍 Diagnostics & Observability
+
+When troubleshooting issues, `reservoir-lite` provides 4 layers of telemetry:
+
+1. **Client-Facing Response Headers**:
+   - `X-Cache`: `HIT` or `MISS`
+   - `X-Cache-Tier`: `RAM`, `DISK`, or `UPSTREAM`
+   - `Cache-Status`: RFC 9211 standard cache header
+   - `Age`: Time in seconds since asset was cached
+   - `Via`: `HTTP/1.1 reservoir`
+2. **Interactive Web Dashboard**:
+   - Navigate to `http://<proxy-ip>:9999/` for live counters of upstream requests, 2xx/4xx/5xx status codes, cache errors, and goroutines.
+3. **JSON Telemetry Endpoint**:
+   - `GET http://<proxy-ip>:9999/__stats` for Prometheus or external monitoring probes.
+4. **Structured Logging**:
+   - Standard Go `slog` output with `--log-level DEBUG` and file persistence via `--log-file var/proxy.log`.
+
+---
+
 ## License
 
 Licensed under the Apache License, Version 2.0. See [LICENSE](LICENSE) for details.

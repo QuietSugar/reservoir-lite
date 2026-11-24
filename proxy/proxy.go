@@ -178,6 +178,13 @@ func (p *Proxy) handleRangeRequest(r responder.Responder, req *http.Request, cac
 	r.SetHeader("Content-Length", fmt.Sprintf("%d", length))
 	r.SetHeader("ETag", cached.Metadata.Object.ETag)
 	r.SetHeader("Last-Modified", cached.Metadata.Object.LastModified.Format(http.TimeFormat))
+	if cached.FromMem {
+		r.SetHeader("X-Cache", "HIT")
+		r.SetHeader("X-Cache-Tier", "RAM")
+	} else {
+		r.SetHeader("X-Cache", "HIT")
+		r.SetHeader("X-Cache-Tier", "DISK")
+	}
 
 	sections := io.NewSectionReader(cached.Data, start, length)
 	return finalizeAndRespond(r, sections, http.StatusPartialContent, req)
@@ -214,6 +221,8 @@ func (p *Proxy) processRequest(r responder.Responder, req *http.Request, key cac
 		defer fetched.Direct.Response.Body.Close()
 
 		r.SetHeaders(fetched.Direct.Response.Header)
+		r.SetHeader("X-Cache", "MISS")
+		r.SetHeader("X-Cache-Tier", "UPSTREAM")
 		if fetched.Direct.UpstreamStatus >= 200 && fetched.Direct.UpstreamStatus < 300 {
 			r.SetHeader("Accept-Ranges", "bytes")
 			addCacheHeaders(r, req, typeutils.None[*cache.Entry[cachedRequestInfo]](), fetchResultToCacheStatus(fetched))
@@ -243,6 +252,13 @@ func (p *Proxy) processRequest(r responder.Responder, req *http.Request, key cac
 		r.SetHeader("Accept-Ranges", "bytes")
 		r.SetHeader("ETag", fetched.Cached.Entry.Metadata.Object.ETag)
 		r.SetHeader("Last-Modified", fetched.Cached.Entry.Metadata.Object.LastModified.Format(http.TimeFormat))
+		if fetched.Cached.Entry.FromMem {
+			r.SetHeader("X-Cache", "HIT")
+			r.SetHeader("X-Cache-Tier", "RAM")
+		} else {
+			r.SetHeader("X-Cache", "HIT")
+			r.SetHeader("X-Cache-Tier", "DISK")
+		}
 		addCacheHeaders(r, req, typeutils.Some(fetched.Cached.Entry), fetchResultToCacheStatus(fetched))
 
 		slog.Info("Serving cached response", "url", req.URL, "key", key)
@@ -436,16 +452,26 @@ func (p *Proxy) handlePurgeEndpoint(r responder.Responder, req *http.Request) er
 			maxDisk = config.Global.MaxCacheSize.Read().Bytes()
 		}
 		entries := p.cache.GetEntriesCount()
+		metrics.Global.RunCollectors() // Refresh goroutines and system mem stats
 		return p.writeJSON(r, http.StatusOK, map[string]any{
-			"status":          "ok",
-			"mem_used_bytes":  memUsed,
-			"mem_max_bytes":   maxMem,
-			"mem_enabled":     maxMem > 0,
-			"disk_used_bytes": diskUsed,
-			"disk_max_bytes":  maxDisk,
-			"entries_count":   entries,
-			"cache_hits":      metrics.Global.Cache.CacheHits.Get(),
-			"mem_cache_hits":  metrics.Global.Cache.MemCacheHits.Get(),
+			"status":            "ok",
+			"mem_used_bytes":    memUsed,
+			"mem_max_bytes":     maxMem,
+			"mem_enabled":       maxMem > 0,
+			"disk_used_bytes":   diskUsed,
+			"disk_max_bytes":    maxDisk,
+			"entries_count":     entries,
+			"cache_hits":        metrics.Global.Cache.CacheHits.Get(),
+			"mem_cache_hits":    metrics.Global.Cache.MemCacheHits.Get(),
+			"cache_misses":      metrics.Global.Cache.CacheMisses.Get(),
+			"cache_errors":      metrics.Global.Cache.CacheErrors.Get(),
+			"upstream_requests": metrics.Global.Requests.UpstreamRequests.Get(),
+			"bytes_served":      metrics.Global.Requests.BytesServed.Get(),
+			"bytes_fetched":     metrics.Global.Requests.BytesFetched.Get(),
+			"status_2xx":        metrics.Global.Requests.StatusOKResponses.Get(),
+			"status_4xx":        metrics.Global.Requests.StatusClientErrorResponses.Get(),
+			"status_5xx":        metrics.Global.Requests.StatusServerErrorResponses.Get(),
+			"num_goroutines":    metrics.Global.System.NumGoroutines.Get(),
 		})
 	}
 

@@ -311,6 +311,40 @@ const dashboardHTML = `<!DOCTYPE html>
         <span class="tag" onclick="fillUrl('https://121.29.88.190:39092/static/fonts/element-icons.535825a5.ttf')">element-icons.ttf</span>
       </div>
     </div>
+
+    <!-- 运行状态与异常排查埋点卡片 -->
+    <div class="card">
+      <h2>📊 运行状态与排查埋点 (Diagnostics)</h2>
+      <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 10px; margin-top: 10px;">
+        <div style="background: #f7fafc; padding: 12px; border-radius: 8px;">
+          <div style="font-size: 12px; color: #718096;">网络回源次数</div>
+          <div style="font-size: 18px; font-weight: bold;" id="diagUpstream">--</div>
+        </div>
+        <div style="background: #f7fafc; padding: 12px; border-radius: 8px;">
+          <div style="font-size: 12px; color: #718096;">2xx 正常响应</div>
+          <div style="font-size: 18px; font-weight: bold; color: #38a169;" id="diag2xx">--</div>
+        </div>
+        <div style="background: #f7fafc; padding: 12px; border-radius: 8px;">
+          <div style="font-size: 12px; color: #718096;">4xx 客户端异常</div>
+          <div style="font-size: 18px; font-weight: bold; color: #dd6b20;" id="diag4xx">--</div>
+        </div>
+        <div style="background: #f7fafc; padding: 12px; border-radius: 8px;">
+          <div style="font-size: 12px; color: #718096;">5xx 服务端异常</div>
+          <div style="font-size: 18px; font-weight: bold; color: #e53e3e;" id="diag5xx">--</div>
+        </div>
+        <div style="background: #f7fafc; padding: 12px; border-radius: 8px;">
+          <div style="font-size: 12px; color: #718096;">缓存读写异常</div>
+          <div style="font-size: 18px; font-weight: bold; color: #e53e3e;" id="diagCacheErr">--</div>
+        </div>
+        <div style="background: #f7fafc; padding: 12px; border-radius: 8px;">
+          <div style="font-size: 12px; color: #718096;">并发 Goroutines</div>
+          <div style="font-size: 18px; font-weight: bold;" id="diagGoroutines">--</div>
+        </div>
+      </div>
+      <div style="margin-top: 14px; font-size: 12px; color: #718096; line-height: 1.5;">
+        💡 <b>排查提示</b>：在浏览器中按 <code>F12</code> 展开任一静态资源的 Response Headers，可直接查看 <code>X-Cache: HIT</code>、<code>X-Cache-Tier: RAM|DISK</code> 与 RFC 9211 <code>Cache-Status</code> 链路标记。
+      </div>
+    </div>
   </div>
 
   <script>
@@ -354,6 +388,14 @@ const dashboardHTML = `<!DOCTYPE html>
         const diskPct = Math.min(100, Math.round((data.disk_used_bytes / data.disk_max_bytes) * 100)) || 0;
         document.getElementById('diskProgressBar').style.width = diskPct + '%';
         document.getElementById('totalHitsText').textContent = '总命中: ' + (data.cache_hits || 0) + ' 次';
+
+        // 诊断埋点信息
+        document.getElementById('diagUpstream').textContent = (data.upstream_requests || 0) + ' 次';
+        document.getElementById('diag2xx').textContent = (data.status_2xx || 0);
+        document.getElementById('diag4xx').textContent = (data.status_4xx || 0);
+        document.getElementById('diag5xx').textContent = (data.status_5xx || 0);
+        document.getElementById('diagCacheErr').textContent = (data.cache_errors || 0);
+        document.getElementById('diagGoroutines').textContent = (data.num_goroutines || 0);
       } catch (e) {
         console.error('加载统计失败', e);
       }

@@ -409,6 +409,7 @@ func (c *FileCache[ObjectData]) Get(key CacheKey) (*Entry[ObjectData], error) {
 			Data:     NewReadSeekNopCloser(memData),
 			Metadata: entryMeta,
 			Stale:    stale,
+			FromMem:  true,
 		}, nil
 	}
 
@@ -498,6 +499,7 @@ func (c *FileCache[ObjectData]) Cache(key CacheKey, data io.Reader, expires time
 			return &Entry[ObjectData]{
 				Data:     NewReadSeekNopCloser(memBuf),
 				Metadata: meta,
+				FromMem:  true,
 			}, nil
 		}
 		// If read failed, rewind file for reading
