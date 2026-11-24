@@ -41,17 +41,16 @@ func startWebServer(errChan chan error, ctx context.Context) error {
 
 	apiDisabled := config.Global.ApiDisabled.Read()
 
-	webserver := webserver.New()
-
 	if apiDisabled {
-		slog.Info("API is disabled by configuration, skipping registration")
-	} else {
-		api := api.New()
-		if err := webserver.Register(api); err != nil {
-			return fmt.Errorf("failed to register API: %v", err)
-		}
+		slog.Info("API is disabled by configuration, skipping webserver startup")
+		return nil
 	}
 
+	webserver := webserver.New()
+	api := api.New()
+	if err := webserver.Register(api); err != nil {
+		return fmt.Errorf("failed to register API: %v", err)
+	}
 
 	slog.Info("Starting webserver", "address", webserverListen)
 	webserver.Listen(webserverListen, errChan, ctx)

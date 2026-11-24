@@ -33,6 +33,11 @@ var staticAssetExtensions = map[string]bool{
 	".ttf":   true,
 	".eot":   true,
 	".json":  true,
+	".wasm":  true,
+	".webm":  true,
+	".mp4":   true,
+	".map":   true,
+	".bin":   true,
 }
 
 func removeHopByHopHeaders(header http.Header) {
@@ -109,21 +114,20 @@ func sendRequestToTarget(req *http.Request, httpsDefault bool) (*http.Response, 
 			TLSClientConfig: &tls.Config{
 				InsecureSkipVerify: true,
 			},
-			ResponseHeaderTimeout: 10 * time.Second,
+			ResponseHeaderTimeout: 30 * time.Second,
 			DisableCompression:    true,
 		}
 
 		client = &http.Client{
 			Transport: tr,
-			Timeout:   15 * time.Second,
 		}
 	} else {
 		tr := &http.Transport{
-			DisableCompression: true,
+			ResponseHeaderTimeout: 30 * time.Second,
+			DisableCompression:    true,
 		}
 		client = &http.Client{
 			Transport: tr,
-			Timeout:   15 * time.Second,
 		}
 	}
 	resp, err := client.Do(req)

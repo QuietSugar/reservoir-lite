@@ -79,10 +79,12 @@ func TestStaticAssetExtensionsWhitelist(t *testing.T) {
 		{"/images/logo.png", true},
 		{"/assets/font.woff2", true},
 		{"/data/config.json", true},
+		{"/assets/module.wasm", true},
+		{"/media/video.webm", true},
 		{"/api/v1/users", false},
 		{"/index.php", false},
 		{"/search?q=test", false},
-		{"/download.bin", false},
+		{"/setup.exe", false},
 	}
 
 	for _, tc := range testCases {
